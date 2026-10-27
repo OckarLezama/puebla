@@ -116,7 +116,9 @@ function paint() {
   computeAgg();
   const src = 'u-' + S.vista;
   for (const [k, u] of Object.entries(AGG)) map.setFeatureState({ source: src, id: k }, { c: colorFor(u) });
-  legend();
+  const v = VISTAS.find(x => x.k === S.vista), sin = Object.keys(AGG).filter(k => !AGG[k].w).map(k => keyOf(S.vista, k));
+  map.setFilter('t-' + S.vista, ['in', ['get', v.id], ['literal', sin]]);
+  legend(); hero();
 }
 
 /* ---------- leyenda ---------- */
@@ -128,7 +130,7 @@ function legend() {
     for (const u of Object.values(AGG)) if (u.w && !u.w.tie) won[u.w.c] = (won[u.w.c] || 0) + 1;
     const items = Object.entries(won).sort((a, b) => b[1] - a[1]);
     const unidad = { seccion: 'secciones', colonia: 'colonias', ja: 'juntas', dl: 'distritos', df: 'distritos' }[S.vista];
-    h += `<h4>Quién ganó · ${unidad} ganadas</h4><div class="items">${items.map(([c, n]) => `<span class="it" title="${esc(candTitle(c))}"><span class="sw" style="background:${candColor(c)}"></span>${esc(candLabel(c))} <b>${n}</b></span>`).join('')}</div>`;
+    h += `<h4>Ventaja de quien ganó</h4>`;
     const g = cssVar('--fg'), bg = cssVar('--mapbg');
     h += `<div class="items"><span class="it"><span class="sw" style="background:${mix(g, bg, .55)}"></span>Ventaja &lt;5 pts</span><span class="it"><span class="sw" style="background:${mix(g, bg, .28)}"></span>5–15</span><span class="it"><span class="sw" style="background:${g}"></span>&gt;15</span></div>`;
   } else {
@@ -138,7 +140,7 @@ function legend() {
     h += `<div class="rampl"><span>0</span>${bins.map(b => `<span>${b}</span>`).join('')}<span>100</span></div>`;
   }
   const nores = Object.values(AGG).filter(u => !u.w).length;
-  if (nores) h += `<div class="items"><span class="it"><span class="sw" style="background:${cssVar('--nores')}"></span>Sin resultados en ${m.anio} (${nores})</span></div>`;
+  if (nores) h += `<div class="items"><span class="it"><span class="sw" style="background:${cssVar('--nores')};background-image:repeating-linear-gradient(135deg,rgba(110,125,125,.6) 0 1px,transparent 1px 4px)"></span>${S.vista === 'seccion' ? 'Secciones creadas después de ' + m.anio : 'Sin resultados en ' + m.anio} (${nores})</span></div>`;
   L.innerHTML = h;
 }
 
@@ -203,7 +205,8 @@ function renderPanel() {
   }
   h += notes(vista, a);
   h += context(vista, key);
-  h += `<div class="sec"><h3>Cómo ha votado · 2015–2024</h3>${history(vista, key)}</div>`;
+  h += trend(vista, key);
+  h += `<div class="sec"><h3>Todas las elecciones · 2015–2024</h3>${history(vista, key)}</div>`;
   h += `<div class="src">Fuente: ${esc(m.fuente)}. Cartografía: INE, Base Geográfica Digital (dic-2025). Juntas auxiliares según el mapa PILOTO 5.</div>`;
   $('#pbody').innerHTML = h;
   $('#pbody').scrollTop = 0;
@@ -236,12 +239,13 @@ function fit(geom) {
   const walk = c => { if (typeof c[0] === 'number') { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); } else c.forEach(walk); };
   walk(geom.coordinates);
   const mob = isMobile();
-  map.fitBounds([[x0, y0], [x1, y1]], { padding: { top: 40, left: 40, right: 40, bottom: mob ? window.innerHeight * 0.45 : 40 }, maxZoom: 15.5, duration: 600 });
+  const wide = map.getContainer().clientWidth > 900;
+  map.fitBounds([[x0, y0], [x1, y1]], { padding: { top: mob ? 80 : 30, left: wide ? 390 : 40, right: wide ? 30 : 40, bottom: mob ? window.innerHeight * 0.3 : 30 }, maxZoom: 15.5, duration: 600 });
 }
 function setVista(k, keepSel) {
   for (const v of VISTAS) {
     const vis = v.k === k ? 'visible' : 'none';
-    map.setLayoutProperty('f-' + v.k, 'visibility', vis); map.setLayoutProperty('l-' + v.k, 'visibility', vis);
+    map.setLayoutProperty('f-' + v.k, 'visibility', vis); map.setLayoutProperty('l-' + v.k, 'visibility', vis); map.setLayoutProperty('t-' + v.k, 'visibility', vis);
   }
   S.vista = k; if (!keepSel) S.sel = null;
   map.moveLayer('sel'); map.moveLayer('mun-line');
@@ -249,7 +253,7 @@ function setVista(k, keepSel) {
   map.removeLayer('sel'); map.addLayer({ id: 'sel', type: 'line', source: src, paint: { 'line-color': cssVar('--fg'), 'line-width': 3 }, layout: { visibility: 'none' }, filter: ['==', ['get', 'seccion'], -1] });
   document.querySelectorAll('#vistas button').forEach(b => b.classList.toggle('on', b.dataset.v === k));
   $('#sub').textContent = 'Municipio de Puebla · resultados por ' + VISTAS.find(v => v.k === k).l.toLowerCase().replace('aux.', 'auxiliar').replace('dist.', 'distrito');
-  paint();
+  paint(); labels();
   if (!keepSel) { select(null); fit(GEO.municipio.features[0].geometry); }
 }
 function setEl(eid) {
@@ -359,10 +363,25 @@ function addLayers() {
   for (const v of VISTAS) {
     map.addSource('u-' + v.k, { type: 'geojson', data: GEO[v.k], promoteId: v.id });
     map.addLayer({ id: 'f-' + v.k, type: 'fill', source: 'u-' + v.k, layout: { visibility: 'none' },
-      paint: { 'fill-color': ['coalesce', ['feature-state', 'c'], cssVar('--nores')], 'fill-opacity': ['case', ['boolean', ['feature-state', 'h'], false], 0.75, 0.92] } });
+      paint: { 'fill-color': ['coalesce', ['feature-state', 'c'], cssVar('--nores')], 'fill-color-transition': { duration: 450 }, 'fill-opacity': ['case', ['boolean', ['feature-state', 'h'], false], 0.72, 0.93] } });
     map.addLayer({ id: 'l-' + v.k, type: 'line', source: 'u-' + v.k, layout: { visibility: 'none' },
       paint: { 'line-color': cssVar('--mapbg'), 'line-width': v.k === 'seccion' || v.k === 'colonia' ? ['interpolate', ['linear'], ['zoom'], 10, 0.3, 14, 1.2] : 1.5 } });
   }
+  map.addSource('ctx', { type: 'geojson', data: GEO.contexto });
+  map.addLayer({ id: 'lago', type: 'fill', source: 'ctx', filter: ['==', ['get', 'k'], 'lago'], paint: { 'fill-color': cssVar('--water'), 'fill-opacity': .85 } });
+  map.addLayer({ id: 'rio', type: 'line', source: 'ctx', filter: ['==', ['get', 'k'], 'rio'], paint: { 'line-color': cssVar('--water'), 'line-width': ['interpolate', ['linear'], ['zoom'], 10, .6, 15, 2.2] } });
+  map.addLayer({ id: 'via', type: 'line', source: 'ctx', filter: ['==', ['get', 'k'], 'principal'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': cssVar('--road'), 'line-opacity': .75, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, .5, 13, 1.6, 16, 4] } });
+  map.addLayer({ id: 'autopista', type: 'line', source: 'ctx', filter: ['==', ['get', 'k'], 'autopista'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': cssVar('--road'), 'line-opacity': .9, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.2, 13, 2.6, 16, 6] } });
+  map.on('zoomend', loadStreets);
+  map.on('moveend', declutter);
+  // trama para secciones sin resultados (creadas después de la elección)
+  const cv = document.createElement('canvas'); cv.width = cv.height = 8; const cx = cv.getContext('2d');
+  cx.strokeStyle = 'rgba(110,125,125,.55)'; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(0, 8); cx.lineTo(8, 0); cx.moveTo(-2, 2); cx.lineTo(2, -2); cx.moveTo(6, 10); cx.lineTo(10, 6); cx.stroke();
+  map.addImage('trama', { width: 8, height: 8, data: cx.getImageData(0, 0, 8, 8).data });
+  for (const v of VISTAS) map.addLayer({ id: 't-' + v.k, type: 'fill', source: 'u-' + v.k, layout: { visibility: 'none' },
+    filter: ['==', ['get', v.id], '__none__'], paint: { 'fill-pattern': 'trama' } }, 'l-' + v.k);
   map.addLayer({ id: 'sel', type: 'line', source: 'u-seccion', paint: { 'line-color': cssVar('--fg'), 'line-width': 3 }, layout: { visibility: 'none' }, filter: ['==', ['get', 'seccion'], -1] });
   map.addLayer({ id: 'mun-line', type: 'line', source: 'mun', paint: { 'line-color': cssVar('--muted'), 'line-width': 1.2 } });
 
@@ -376,7 +395,7 @@ function addLayers() {
       map.getCanvas().style.cursor = 'pointer';
       if (isMobile()) return;
       const u = AGG[id], w = u && u.w;
-      tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${w ? (w.tie ? 'Empate' : `${esc(candLabel(w.c))} · ${p1(w.share)}`) + `<br><span style="color:var(--muted)">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : '<span style="color:var(--muted)">Sin resultados en esta elección</span>'}`;
+      tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${w ? (w.tie ? 'Empate' : `${esc(candLabel(w.c))} · ${p1(w.share)}`) + `<br><span style="color:var(--muted)">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : `<span style="color:var(--muted)">${v.k === 'seccion' ? 'Sección creada después de esta elección' : 'Sin resultados en esta elección'}</span>`}`;
       tip.hidden = false;
       const W = map.getContainer().clientWidth;
       tip.style.left = Math.min(e.point.x + 14, W - 250) + 'px'; tip.style.top = (e.point.y + 14) + 'px';
@@ -394,13 +413,103 @@ function retheme() {
   map.setPaintProperty('mun-line', 'line-color', cssVar('--muted'));
   for (const v of VISTAS) map.setPaintProperty('l-' + v.k, 'line-color', cssVar('--mapbg'));
   map.setPaintProperty('sel', 'line-color', cssVar('--fg'));
+  for (const l of ['lago']) map.setPaintProperty(l, 'fill-color', cssVar('--water'));
+  map.setPaintProperty('rio', 'line-color', cssVar('--water'));
+  for (const l of ['via', 'autopista']) map.setPaintProperty(l, 'line-color', cssVar('--road'));
+  if (map.getLayer('calles')) map.setPaintProperty('calles', 'line-color', cssVar('--road'));
   paint(); renderPanel();
+}
+
+/* ---------- calles (se cargan al acercarse) ---------- */
+let streetsP = null;
+function loadStreets() {
+  if (streetsP || map.getZoom() < 13) return;
+  streetsP = fetch('data/geo/calles.json').then(r => r.json()).then(d => {
+    const feats = d.l.map(a => { let x = a[0] + d.b[0], y = a[1] + d.b[1]; const c = [[x / 1e5, y / 1e5]];
+      for (let i = 2; i < a.length; i += 2) { x += a[i]; y += a[i + 1]; c.push([x / 1e5, y / 1e5]); }
+      return { type: 'Feature', geometry: { type: 'LineString', coordinates: c }, properties: {} }; });
+    map.addSource('calles', { type: 'geojson', data: { type: 'FeatureCollection', features: feats } });
+    map.addLayer({ id: 'calles', type: 'line', source: 'calles', minzoom: 13,
+      paint: { 'line-color': cssVar('--road'), 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, .45, 16, .7], 'line-width': ['interpolate', ['linear'], ['zoom'], 13, .3, 16, 1.6] } }, 'via');
+  }).catch(() => { streetsP = null; });
+}
+
+/* ---------- etiquetas de juntas y distritos ---------- */
+let LABELS = [];
+function centroid(geom) {
+  // centro del polígono más grande (promedio ponderado de su anillo exterior)
+  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+  let best = null, ba = -1;
+  for (const p of polys) { const r = p[0]; let a = 0, cx = 0, cy = 0;
+    for (let i = 0, k = r.length - 1; i < r.length; k = i++) { const f = r[k][0] * r[i][1] - r[i][0] * r[k][1]; a += f; cx += (r[k][0] + r[i][0]) * f; cy += (r[k][1] + r[i][1]) * f; }
+    if (Math.abs(a) > ba) { ba = Math.abs(a); best = [cx / (3 * a), cy / (3 * a)]; } }
+  return { c: best, a: ba };
+}
+function labels() {
+  LABELS.forEach(m => m.remove()); LABELS = [];
+  if (!['ja', 'dl', 'df'].includes(S.vista)) return;
+  const v = VISTAS.find(x => x.k === S.vista);
+  const items = GEO[S.vista].features.map(f => ({ f, ...centroid(f.geometry) })).sort((x, y) => y.a - x.a);
+  for (const { f, c } of items) {
+    const key = f.properties[v.id];
+    const el = document.createElement('div');
+    el.className = 'mlabel' + (S.vista === 'ja' ? '' : ' big');
+    el.textContent = S.vista === 'ja' ? key : (S.vista === 'dl' ? 'DL ' : 'DF ') + key;
+    LABELS.push(new maplibregl.Marker({ element: el }).setLngLat(c).addTo(map));
+  }
+  declutter();
+}
+function declutter() {
+  const placed = [];
+  for (const m of LABELS) {
+    const el = m.getElement(); el.style.visibility = 'visible';
+    const r = el.getBoundingClientRect(), pad = 4;
+    if (placed.some(p => r.left < p.right + pad && r.right > p.left - pad && r.top < p.bottom + pad && r.bottom > p.top - pad)) el.style.visibility = 'hidden';
+    else placed.push(r);
+  }
+}
+
+/* ---------- resumen sobre el mapa ---------- */
+function hero() {
+  const m = RES[S.el].meta, a = sumSecs(S.el, unitSecs('mun', null, S.el)), r = ranking(S.el, a);
+  const won = {}; for (const u of Object.values(AGG)) if (u.w && !u.w.tie) won[u.w.c] = (won[u.w.c] || 0) + 1;
+  const unidad = { seccion: 'secciones', colonia: 'colonias', ja: 'juntas', dl: 'distritos', df: 'distritos' }[S.vista];
+  const top = r.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
+  const H = $('#hero'), open = H.classList.contains('open');
+  H.innerHTML = `<button class="hero-toggle" aria-label="Ver resumen"></button>
+    <div><div class="eyebrow">Municipio de Puebla · ${m.anio}</div><h2>${esc(m.cargo)}<small>${p1(pct(a.t, a.ln))} de participación</small></h2></div>
+    <div class="stack" title="Reparto de la votación">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}" title="${esc(candLabel(x.c))} ${p1(pct(x.v, a.t))}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
+    <div class="rows">${top.map(x => `<div class="r"><span class="sw" style="background:${candColor(x.c)}"></span><span class="nm" title="${esc(candTitle(x.c))}">${esc(candLabel(x.c))}</span><span class="pc">${p1(pct(x.v, a.t))}</span><span class="wn">${won[x.c] || 0} ${unidad}</span></div>`).join('')}</div>
+    <div class="foot"><span>Lista nominal <b>${fmt(a.ln)}</b></span><span>Votos <b>${fmt(a.t)}</b></span></div>`;
+  if (open) H.classList.add('open');
+  H.querySelector('.hero-toggle').onclick = () => H.classList.toggle('open');
+}
+
+/* ---------- tendencia del mismo cargo ---------- */
+function trend(vista, key) {
+  const cargo = RES[S.el].meta.cargo.replace(' (extraordinaria)', '');
+  const els = IDX.filter(e => e.cargo.replace(' (extraordinaria)', '') === cargo).sort((a, b) => a.anio - b.anio);
+  if (els.length < 2) return '';
+  const pts = els.map(e => { const a = sumSecs(e.id, unitSecs(vista, key, e.id)); const by = {};
+    if (a.t) for (const x of ranking(e.id, a)) { const p = x.c.startsWith('CAND_IND') ? 'IND' : x.c.split('-')[0]; by[p] = (by[p] || 0) + pct(x.v, a.t); }
+    return { e, a, by, part: a.ln ? pct(a.t, a.ln) : null }; }).filter(p => p.a.t);
+  if (pts.length < 2) return '';
+  const tot = {}; pts.forEach(p => Object.entries(p.by).forEach(([k, v]) => tot[k] = (tot[k] || 0) + v));
+  const lead = Object.entries(tot).filter(([k]) => k !== 'IND').sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+  const W = 340, Hh = 150, L = 30, R = 10, T = 10, B = 22, xs = i => L + i * (W - L - R) / (pts.length - 1), ys = v => T + (1 - v / 100) * (Hh - T - B);
+  let g = [0, 25, 50, 75, 100].map(v => `<line class="ax" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text x="${L - 6}" y="${ys(v) + 3.5}" text-anchor="end">${v}</text>`).join('');
+  g += pts.map((p, i) => `<text x="${xs(i)}" y="${Hh - 4}" text-anchor="middle">${p.e.anio}</text>`).join('');
+  const line = (vals, col, dash) => `<polyline fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round" ${dash ? 'stroke-dasharray="4 4"' : ''} points="${vals.map((v, i) => v == null ? '' : xs(i) + ',' + ys(v)).join(' ')}"/>` + vals.map((v, i) => v == null ? '' : `<circle cx="${xs(i)}" cy="${ys(v)}" r="${i === vals.length - 1 ? 4 : 2.8}" fill="${col}"><title>${pts[i].e.anio}: ${p1(v)}</title></circle>`).join('');
+  g += line(pts.map(p => p.part), cssVar('--muted'), true);
+  for (const p of lead) g += line(pts.map(x => x.by[p] || 0), (PARTY[p] || [IND])[0]);
+  return `<div class="sec trend"><h3><span>${esc(cargo)} · tendencia</span></h3><svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Tendencia de votación">${g}</svg>
+    <div class="lg">${lead.map(p => `<span><i style="background:${(PARTY[p] || [IND])[0]}"></i>${p} y aliados</span>`).join('')}<span><i style="background:${cssVar('--muted')}"></i>Participación</span></div></div>`;
 }
 
 /* ---------- arranque ---------- */
 async function load() {
   const j = u => fetch(u).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
-  const geoP = Promise.all(['municipio', 'seccion', 'colonia', 'ja', 'dl', 'df'].map(k => j(`data/geo/${k}.geojson`).then(g => GEO[k] = g)));
+  const geoP = Promise.all(['municipio', 'seccion', 'colonia', 'ja', 'dl', 'df', 'contexto'].map(k => j(`data/geo/${k}.geojson`).then(g => GEO[k] = g)));
   IDX = await j('data/res/indice.json');
   await Promise.all([geoP, ...IDX.map(e => j(`data/res/${e.id}.json`).then(d => RES[e.id] = d)), initMap()]);
   GEO.colonia.byId = {}; for (const f of GEO.colonia.features) GEO.colonia.byId[f.properties.cid] = f;

@@ -87,3 +87,33 @@ for k, g in capas.items():
 print('secciones con JA aproximada (sin colonias en PILOTO):', int(sec.ja_aprox.sum()))
 print('JA:', sec.ja.value_counts().to_dict())
 print('colonias INE en municipio:', len(col), '| sin CP:', int((col.CP.isna()|(col.CP==0)).sum()))
+
+# --- contexto del mapa: vías principales, ríos y cuerpos de agua; calles para acercamiento ---
+g0 = mun.geometry.iloc[0]
+def clip(n, **kw):
+    g = gpd.read_file(f'{BGD}/{n}.shp', mask=g0)
+    g = g.clip(g0)
+    return g[g.geometry.notna() & ~g.geometry.is_empty]
+via = clip('VIALIDAD')
+prin = pd.concat([
+    via[via.CATEGORIA == 1].assign(k='principal'),
+    clip('AUTOPISTA').assign(k='autopista'),
+    clip('PAVIMENTADA').assign(k='principal'),
+])[['k', 'NOMBRE', 'geometry']].rename(columns={'NOMBRE': 'n'})
+agua = pd.concat([clip('RIOS').assign(k='rio'), clip('LAGOS').assign(k='lago')])[['k', 'geometry']]
+ctx = gpd.GeoDataFrame(pd.concat([prin, agua]), crs=sec.crs)
+ctx['geometry'] = ctx.geometry.simplify(4)
+ctx.to_crs(4326).to_file(f'{OUT}/contexto.geojson', driver='GeoJSON', COORDINATE_PRECISION=5)
+cal = via[via.CATEGORIA != 1][['geometry']].copy()
+cal['geometry'] = cal.geometry.simplify(3)
+cal = cal.dissolve().explode(index_parts=False)
+# calles en formato compacto (enteros a 1e-5 grados, codificados por diferencias) para que pese ~1 MB
+L = []
+for gm in cal.to_crs(4326).geometry:
+    if gm.geom_type != 'LineString' or len(gm.coords) < 2: continue
+    q = [(round(x * 1e5), round(y * 1e5)) for x, y in gm.coords]
+    o = [q[0][0] + 9800000, q[0][1] - 1900000]
+    for i in range(1, len(q)): o += [q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]]
+    L.append(o)
+json.dump({'b': [-9800000, 1900000], 'l': L}, open(f'{OUT}/calles.json', 'w'), separators=(',', ':'))
+print('contexto', os.path.getsize(f'{OUT}/contexto.geojson') // 1024, 'KB', '| calles', os.path.getsize(f'{OUT}/calles.json') // 1024, 'KB')
