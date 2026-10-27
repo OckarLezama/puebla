@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Puebla Electoral</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Resultados electorales 2015–2024 del municipio de Puebla por sección, colonia, junta auxiliar y distrito.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="app.css">
+
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Puebla <span>Electoral</span></h1>
+      <p class="sub" id="sub">Municipio de Puebla · resultados por sección</p>
+    </div>
+    <div class="search">
+      <label class="sr" for="q">Buscar</label>
+      <input id="q" type="search" placeholder="Sección, colonia, CP o junta" autocomplete="off">
+      <ul id="qres" class="qres" hidden></ul>
+    </div>
+    <div class="controls" id="controls">
+      <div class="ctl">
+        <label for="cargo">Elección</label>
+        <div class="row">
+          <select id="cargo"></select>
+          <div class="seg" id="anios" role="group" aria-label="Año"></div>
+        </div>
+      </div>
+      <div class="ctl">
+        <span class="lbl">Ver por</span>
+        <div class="seg" id="vistas" role="group" aria-label="Ver por"></div>
+      </div>
+      <div class="ctl">
+        <label for="modo">Colorear por</label>
+        <select id="modo"></select>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div id="map" aria-label="Mapa del municipio de Puebla"></div>
+    <div class="legend" id="legend"></div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="loading" id="loading">Cargando resultados…</div>
+  </main>
+
+  <aside class="panel" id="panel" data-state="peek">
+    <button class="grip" id="grip" aria-label="Mostrar u ocultar detalle"><i></i></button>
+    <div class="pbody" id="pbody"></div>
+  </aside>
+</div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
