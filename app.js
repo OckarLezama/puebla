@@ -196,9 +196,11 @@ function highlight() {
   focoLabel(fm);
   if (map.getLayer('mask')) { const keep = activeMuns(munOf); map.setFilter('mask', keep ? ['!', ['in', ['get', 'municipio'], ['literal', keep]]] : ['==', ['get', 'municipio'], -1]); }
   if (S.pinB) mapFocusParty(S.pinB);
+  for (const d of ['dl', 'df']) if (map.getLayer('pin-' + d)) { const pc = S.pinC && ELS[S.pinC.eid].tipo.toLowerCase() === d ? S.pinC : null, prop = d === 'dl' ? 'distrito_l' : 'distrito_f', ks = pc ? distWins(pc.eid, pc.b).map(x => x.k) : [];
+    const f = ['in', ['get', prop], ['literal', ks]]; map.setFilter('pin-' + d, f); map.setFilter('pin-' + d + '-l', f); if (pc) { map.setPaintProperty('pin-' + d, 'fill-color', pcol(pc.b)); map.setPaintProperty('f-' + v.geo, 'fill-opacity', .05); map.setPaintProperty('f-municipios', 'fill-opacity', .04); } }
   syncHash();
   const home = S.foco.u === HOME.u && S.foco.key === HOME.key && !S.sel && S.vista === HOME.vista && CAPAS.alcance === 'foco';
-  $('#btn-home').hidden = home; placeHome();
+  $('#btn-home').hidden = home && atHomeView() && !S.pinB && !S.pinC; placeHome();
 }
 /* municipios que quedan a color; el resto lleva velo. null = todo el estado a color */
 function activeMuns(munOf) {
@@ -269,6 +271,8 @@ function unitName(u, key) {
   if (u === 'dl') return 'Distrito local ' + key;
   if (u === 'df') return 'Distrito federal ' + key;
 }
+let HOME_VIEW = null;
+function atHomeView() { if (!HOME_VIEW || !map) return true; const c = map.getCenter(), z = map.getZoom(); return Math.abs(z - HOME_VIEW.z) < .6 && Math.abs(c.lng - HOME_VIEW.c.lng) < .06 && Math.abs(c.lat - HOME_VIEW.c.lat) < .05; }
 function placeHome() { const H = $('#hero'), B = $('#btn-home'); if (!isMobile()) B.style.top = (H.offsetTop + H.offsetHeight + 10) + 'px'; else B.style.top = ''; }
 const chip = (p, sm) => `<span class="pch${sm ? ' sm' : ''}" style="background:${pcol(p)}" title="${esc((PARTY[p] || [0, p])[1])}">${esc(p === 'IND' ? 'IND' : p)}</span>`;
 const chips = c => c.startsWith('CAND_IND') ? chip('IND') : c.split('-').map(p => chip(p)).join('');
@@ -476,7 +480,7 @@ function datosGen(u, key) {
   const kp = (v, l) => `<div class="dg-k"><b>${v}</b><span>${l}</span></div>`;
   const big = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(0) + 'k' : fmt(v);
   return `<div class="dg">${kp(fmt(props.length), props.length === 1 ? 'sección' : 'secciones')}${kp(big(P[1]), 'lista nominal')}${kp(big(P[0]), 'padrón')}
-    ${u === 'est' || u === 'dl' || u === 'df' ? kp(uniq('municipio'), 'municipios') : ''}${u !== 'dl' ? kp(uniq('distrito_l'), uniq('distrito_l') === 1 ? 'distrito local' : 'distritos locales') : ''}${u !== 'df' ? kp(uniq('distrito_f'), uniq('distrito_f') === 1 ? 'distrito federal' : 'distritos federales') : ''}</div>
+    ${u === 'est' || u === 'dl' || u === 'df' ? kp(uniq('municipio'), 'municipios') : ''}${u !== 'dl' ? kp(uniq('distrito_l'), 'Dtto Loc') : ''}${u !== 'df' ? kp(uniq('distrito_f'), 'Dtto Fed') : ''}</div>
     <div class="dg-s">Lista nominal por sexo y edad</div>
     <div class="dg-bar"><i style="flex:${P[3]};background:#7D2447" ${tipA(`<b>Mujeres</b><div class="tv"><strong>${p1(pct(P[3], tot))}</strong> ${fmt(P[3])}</div>`)}></i><i style="flex:${P[2]};background:#4A5350" ${tipA(`<b>Hombres</b><div class="tv"><strong>${p1(pct(P[2], tot))}</strong> ${fmt(P[2])}</div>`)}></i></div>
     <div class="dg-lg"><span><i style="background:#7D2447"></i>Mujeres <b>${p1(pct(P[3], tot))}</b></span><span><i style="background:#4A5350"></i>Hombres <b>${p1(pct(P[2], tot))}</b></span><span>18–29 años <b>${pct(y, tot).toFixed(0)}%</b></span><span>65 y más <b>${pct(o, tot).toFixed(0)}%</b></span></div>
@@ -486,6 +490,11 @@ function datosGen(u, key) {
 }
 
 /* ---------- congreso y ayuntamientos ---------- */
+/* distritos de mayoría ganados por un bloque (según el registro de ganadores; si falta, por votos) */
+function distWins(eid, b) { const t = ELS[eid].tipo.toLowerCase(), E = EST[eid], out = []; if (t !== 'dl' && t !== 'df') return out;
+  for (const k of Object.keys(E[t] || {})) { const g = E.g && E.g[t + k], a = agg(t, +k, eid), w = verdict(eid, a), p = g ? g[1].split(/[_-]/)[0] : (w ? leadOf(w.c) : null);
+    if (p && blocOf(eid, p) === b) out.push({ t, k: +k, p, who: g ? g[0] : null, a, w }); }
+  return out.sort((x, y) => x.k - y.k); }
 function seatsBody(s) {
   const nmb = b => s.t === 'AYU' ? allyName(s.eid, b) : s.nm(b), c0 = pcol(s.order[0]), n0 = s.bl[s.order[0]].n;
   if (s.t === 'AYU') {
@@ -506,9 +515,10 @@ function seatsBody(s) {
   const mk = (n, l, cls) => `<span class="cg-m ${cls}" style="left:${(n / s.total * 100).toFixed(2)}%"><em>${l} · ${n}</em></span>`;
   return `<div class="hl"><span class="hl-d" style="background:${c0}"></span><b class="hl-v" style="color:${c0}" data-n="${n0}">0</b><span class="hl-n">de ${s.total} ${s.t === 'SEN' ? 'escaños' : 'diputaciones'}<small>${esc(s.nm(s.order[0]))}</small></span></div><span class="pill">${tag}</span>
     <div class="cgs"><div class="cgs-s">${seats}</div>${s.t === 'DL' ? mk(s.may, 'Mayoría', 'm1') + mk(s.cal, 'Calificada', 'm2') : ''}</div>${s.t === 'DL' ? '<div class="cg-lg"><span><i class="mr"></i>Mayoría relativa</span><span><i class="rp"></i>Plurinominal</span></div>' : ''}
-    <div class="fz">${s.order.map((b, i) => { const B = s.bl[b], mr = s.list.filter(x => x.b === b && x.k === 'mr').length, parts = Object.entries(B.parts).sort((x, y) => y[1] - x[1]);
-      return `<div class="fz-r cg-r" style="--d:${i * 40}ms" ${tipA(`<b>${esc(s.nm(b))}</b><div class="tv"><strong>${B.n}</strong> ${s.t === 'SEN' ? 'escaños' : 'diputaciones'}</div><div class="tl">${parts.map(([p, k]) => `<div><span class="sw" style="background:${pcol(p)}"></span>${esc(p)}<b>${k}</b></div>`).join('')}</div>${s.t === 'DL' ? `<span class="m">${mr} de mayoría · ${B.n - mr} plurinominales</span>` : ''}`)}>
-        <span class="fz-n"><i style="background:${pcol(b)}"></i>${esc(s.nm(b))}</span><span class="fz-b"><i style="width:${(B.n / n0 * 100).toFixed(1)}%;display:flex">${parts.map(([p, k]) => `<b style="flex:${k};background:${pcol(p)}"></b>`).join('')}</i></span><b>${B.n}</b><small>${parts.length > 1 ? parts.map(([p, k]) => `${p} ${k}`).join(' · ') : (s.t === 'DL' ? `${mr} MR · ${B.n - mr} RP` : '')}</small></div>`; }).join('')}</div>
+    <div class="fz">${s.order.map((b, i) => { const B = s.bl[b], mr = s.list.filter(x => x.b === b && x.k === 'mr').length, parts = Object.entries(B.parts).sort((x, y) => y[1] - x[1]), on = S.pinC && S.pinC.b === b && S.pinC.eid === s.eid, ds = on ? distWins(s.eid, b) : [];
+      return `<div class="fz-r cg-r${on ? ' on' : ''}" data-pinc="${b}" data-pine="${s.eid}" style="--d:${i * 40}ms" ${tipA(`<b>${esc(s.nm(b))}</b><div class="tv"><strong>${B.n}</strong> ${s.t === 'SEN' ? 'escaños' : 'diputaciones'}</div><div class="tl">${parts.map(([p, k]) => `<div><span class="sw" style="background:${pcol(p)}"></span>${esc(p)}<b>${k}</b></div>`).join('')}</div>${s.t === 'DL' ? `<span class="m">${mr} de mayoría · ${B.n - mr} plurinominales</span>` : ''}${s.t !== 'SEN' ? '<span class="m">Clic: ver en el mapa sus distritos ganados</span>' : ''}`)}>
+        <span class="fz-n"><i style="background:${pcol(b)}"></i>${esc(s.nm(b))}</span><span class="fz-b"><i style="width:${(B.n / n0 * 100).toFixed(1)}%;display:flex">${parts.map(([p, k]) => `<b style="flex:${k};background:${pcol(p)}"></b>`).join('')}</i></span><b>${B.n}</b><small>${parts.length > 1 ? parts.map(([p, k]) => `${p} ${k}`).join(' · ') : (s.t === 'DL' ? `${mr} MR · ${B.n - mr} RP` : '')}</small></div>
+      ${on ? `<div class="ayx-l"><div class="ayx-lh"><b>${ds.length} distritos de mayoría ganados</b>${s.t === 'DL' && B.n > ds.length ? `<small>${B.n - ds.length} plurinominales no tienen distrito</small>` : ''}</div><table class="dzt"><thead><tr><th>Distrito</th><th>Diputación</th><th>Ventaja</th><th>Votos</th><th>Lista nominal</th></tr></thead><tbody>${ds.map(r => `<tr data-go="${r.t}:${r.k}"><td><b>${r.k}</b></td><td>${esc(r.who || '—')} ${chip(r.p, 1)}</td><td>${r.w ? `<span class="dz-v ${compLvl(r.w.margin)[0]}"><b>${r.w.margin.toFixed(1)}</b></span>` : ''}</td><td>${fmt(r.a.t)}</td><td>${fmt(r.a.ln)}</td></tr>`).join('')}</tbody></table></div>` : ''}`; }).join('')}</div>
     <div class="src">${esc(s.sub)}. Fuente: registro de candidaturas ganadoras INE / IEE Puebla.</div>`;
 }
 function afiliados() {
@@ -662,14 +672,16 @@ function renderPanel() {
   const st = m.tipo === 'SEN' || !showState ? null : seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state', zoom: false });
   const ce = m.tipo !== 'DL' && showState ? congEl() : null, sc2 = ce ? seats(ce) : null;
   if (sc2) h += card('cong', esc(sc2.title), seatsBody(sc2), { sub: 'Todo el estado de Puebla', cls: 'state', zoom: false });
-  if (!showState) S.pinB = null;
+  if (!showState) { S.pinB = null; S.pinC = null; }
   if (showState && EST._afi) h += card('afi', 'Afiliados por partido', afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`, { sub: 'Todo el estado · % de la lista nominal', zoom: false, cls: 'state' });
   h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}. ${esc(CAT.padron.fuente)}.</div>`;
   const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B); linkRows(B); bindTips(B); hideTip();
   $$('#pbody .th').forEach(g => g.onclick = () => { hideTip(); setEl(g.dataset.el); });
   $$('#pbody [data-trf]').forEach(b => b.onclick = () => { TRF = TRF === b.dataset.trf ? null : b.dataset.trf; renderPanel(); });
   $$('#pbody [data-bloc]').forEach(c => { c.onmouseenter = () => mapFocusParty(c.dataset.bloc); c.onmouseleave = () => highlight(); });
-  $$('#pbody [data-pin]').forEach(c => c.onclick = () => { hideTip(); S.pinB = S.pinB === c.dataset.pin ? null : c.dataset.pin; const y = $('#pbody').scrollTop; renderPanel(); $('#pbody').scrollTop = y; highlight();
+  $$('#pbody [data-pinc]').forEach(c => c.onclick = () => { hideTip(); const b = c.dataset.pinc, e = c.dataset.pine; S.pinC = S.pinC && S.pinC.b === b && S.pinC.eid === e ? null : { b, eid: e }; S.pinB = null; const y = $('#pbody').scrollTop; renderPanel(); $('#pbody').scrollTop = y; highlight();
+    if (S.pinC) { const ds = distWins(e, b), t = ELS[e].tipo.toLowerCase(), gs = GEO[t].features.filter(f => ds.some(d => d.k === f.properties[t === 'dl' ? 'distrito_l' : 'distrito_f'])); if (gs.length) fitGeom({ coordinates: gs.map(f => f.geometry.coordinates) }); } });
+  $$('#pbody [data-pin]').forEach(c => c.onclick = () => { hideTip(); S.pinB = S.pinB === c.dataset.pin ? null : c.dataset.pin; S.pinC = null; const y = $('#pbody').scrollTop; renderPanel(); $('#pbody').scrollTop = y; highlight();
     if (S.pinB) { const ks = Object.entries(MUNAGG).filter(([, u]) => u.w && !u.w.tie && leadOf(u.w.c) === S.pinB).map(([k]) => +k); const gs = GEO.municipios.features.filter(f => ks.includes(f.properties.municipio)); if (gs.length) fitGeom({ coordinates: gs.map(f => f.geometry.coordinates) }); } });
   $$('#pbody [data-xls-ayu]').forEach(b => b.onclick = e => { e.stopPropagation(); xlsAyu(b.dataset.xlsAyu); });
   $('#btn-link').onclick = copyLink;
@@ -887,7 +899,7 @@ function goTo(u, k) {
   if (S.vista !== u) setVista(u, true);
   select({ u, key }); fitGeom(geomOf(u, key));
 }
-function goHome() { CAPAS.alcance = 'foco'; if (map.getLayer('z-zm-l')) applyCapas(); store.set('pe_capas3', CAPAS); $$('[data-alc]').forEach(x => x.classList.toggle('on', x.dataset.alc === 'foco')); S.foco = { u: HOME.u, key: HOME.key }; S.sel = null; setVista(HOME.vista, true); select(null); fitGeom(geomOf(HOME.u, HOME.key)); }
+function goHome() { S.pinB = null; S.pinC = null; CAPAS.alcance = 'foco'; if (map.getLayer('z-zm-l')) applyCapas(); store.set('pe_capas3', CAPAS); $$('[data-alc]').forEach(x => x.classList.toggle('on', x.dataset.alc === 'foco')); S.foco = { u: HOME.u, key: HOME.key }; S.sel = null; setVista(HOME.vista, true); select(null); fitGeom(geomOf(HOME.u, HOME.key)); }
 function setVista(k, keepSel) {
   S.vista = k; if (!keepSel) S.sel = null;
   for (const x of VISTAS) { if (x.k === 'mun') continue; const on = x.k === k; for (const p of ['f-', 'l-', 't-']) if (map.getLayer(p + x.geo)) map.setLayoutProperty(p + x.geo, 'visibility', on ? 'visible' : 'none'); }
@@ -1051,10 +1063,13 @@ function addLayers() {
   addL({ id: 'foco-sh', type: 'line', source: 'g-municipios', filter: NONE, paint: { 'line-color': '#000000', 'line-width': W(10, 15, 20), 'line-opacity': .28, 'line-blur': 8 } });
   addL({ id: 'foco-c', type: 'line', source: 'g-municipios', filter: NONE, layout: { 'line-join': 'round' }, paint: { 'line-color': '#1E2422', 'line-width': W(5, 7.5, 10) } });
   addL({ id: 'foco-l', type: 'line', source: 'g-municipios', filter: NONE, layout: { 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': W(1.6, 2.6, 3.4) } });
+  // distritos fijados desde la tarjeta del Congreso
+  for (const d of ['dl', 'df']) { addL({ id: 'pin-' + d, type: 'fill', source: 'g-' + d, filter: ['==', ['get', d === 'dl' ? 'distrito_l' : 'distrito_f'], -1], paint: { 'fill-color': '#7D2447', 'fill-opacity': .55 } });
+    addL({ id: 'pin-' + d + '-l', type: 'line', source: 'g-' + d, filter: ['==', ['get', d === 'dl' ? 'distrito_l' : 'distrito_f'], -1], layout: { 'line-join': 'round' }, paint: { 'line-color': '#1E2422', 'line-width': 2.2 } }); }
   // municipio bajo el cursor (antes de entrar a él)
   addL({ id: 'hov-c', type: 'line', source: 'g-municipios', filter: NONE, layout: { 'line-join': 'round' }, paint: { 'line-color': '#1E2422', 'line-width': W(3.5, 5, 6.5), 'line-opacity': .85 } });
   addL({ id: 'hov-l', type: 'line', source: 'g-municipios', filter: NONE, layout: { 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': W(1.2, 1.8, 2.4) } });
-  map.on('moveend', declutter);
+  map.on('moveend', () => { declutter(); if (HOME_VIEW && !atHomeView()) { $('#btn-home').hidden = false; placeHome(); } });
   let hov = null; const tip = $('#tip');
   const setHovMun = k => { for (const id of ['hov-c', 'hov-l']) map.setFilter(id, ['==', ['get', 'municipio'], k]); };
   const clearHov = () => { if (hov) { if (hov.source === 'g-municipios') setHovMun(-1); else map.setFeatureState(hov, { h: false }); } hov = null; };
@@ -1126,7 +1141,7 @@ async function start(session) {
   S.foco = { u: hf.u, key: hf.key }; S.vista = HOME.vista;
   await mapP;
   buildControls(); addLayers(); buildSearch(); sheet();
-  setVista(S.vista); applyCapas(); fitGeom(geomOf(HOME.u, HOME.key), 0);
+  setVista(S.vista); applyCapas(); fitGeom(geomOf(HOME.u, HOME.key), 0); HOME_VIEW = { c: map.getCenter(), z: map.getZoom() };
   applyHash();
   $('#loading').hidden = true;
   if (!store.get('pe_hint')) { const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = 'Toca cualquier municipio para acercarte y ver sus secciones. Con <b>Volver</b> regresas al inicio.'; $('.stage').appendChild(t);

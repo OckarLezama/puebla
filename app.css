@@ -961,3 +961,9 @@ details.dz[open] > summary { margin-bottom: 8px; }
   .ayx-h, .fz.ayx .fz-r { grid-template-columns: minmax(80px, 28%) 1fr 26px 52px 52px; }
 }
 .ubi-l { min-width: 84px; }
+/* v18: distritos en una línea */
+.dg-k span { white-space: nowrap; }
+.ubi-r { flex-wrap: nowrap; } .ubi-l { min-width: 64px; flex: none; }
+.ubi-c { flex-wrap: nowrap; gap: 3px; overflow-x: auto; scrollbar-width: none; } .ubi-c .chip { min-width: 0; padding: 3px 7px; font-size: 12px; flex: none; }
+.fz.cg-r.on, .fz-r.cg-r.on { background: color-mix(in srgb, var(--oro) 22%, transparent); box-shadow: inset 3px 0 0 var(--oro-d); }
+.fz-r.cg-r[data-pinc] { cursor: pointer; }
