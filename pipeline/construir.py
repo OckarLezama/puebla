@@ -304,6 +304,21 @@ for fn, eid, anio, cargo, unidad, fuente in EL:
     w = max(range(len(CAND)), key=lambda i: E['est'][4][i])
     print(f'  {eid:9} secciones {len(S):5} · municipios {len(byM):3} · ganó en el estado {CAND[w]:22} · cobertura distritos {cov:.0%} · ganadores {len(gan)}')
 
+# ======================= COMPOSICIÓN: CONGRESO, DIPUTACIONES Y SENADO =======================
+# cada escaño: [partido de origen (si el registro lo trae), candidatura que lo postuló]
+CONG = {}
+for (anio, cargo), rows in G.items():
+    k = {'DIP_LOC_MR': ('DL', 'mr'), 'DIP_LOC_RP': ('DL', 'rp'), 'DIP_MR': ('DF', 'mr'), 'SEN_MR': ('SEN', 'mr')}.get(cargo)
+    if not k: continue
+    seen, out = set(), []
+    for r in rows:
+        key = (r.get('nombre'), r.get('dl'), r.get('df'), r.get('lista'))
+        if key in seen: continue
+        seen.add(key); out.append([r.get('partido') or '', r.get('actor') or ''])
+    CONG.setdefault(k[0], {}).setdefault(str(anio), {})[k[1]] = out
+estado['_cong'] = CONG
+print('Composición:', {c: sorted(v) for c, v in CONG.items()})
+
 # ======================= PADRÓN Y AFILIADOS =======================
 GR = ['18_19', '20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_Y_MAS']
 pad_meta = None

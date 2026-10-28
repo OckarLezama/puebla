@@ -423,3 +423,37 @@ select option, select optgroup { color: #1d2424; background: #fff; }
   .deck-stage { display: block; overflow: visible; }
   .slide { position: relative; left: auto; top: auto; transform: none !important; opacity: 1; box-shadow: none; border-radius: 0; page-break-after: always; margin: 0; }
 }
+
+/* ===================== v5: mapa base, gráficas vivas ===================== */
+@media (min-width: 761px) { .hero { display: none; } .home-btn { top: 14px !important; } }
+.res-grid { display: grid; gap: 12px; }
+.res-grid .donut { width: 170px; justify-self: center; }
+.donut svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 4px 10px rgba(0,0,0,.08)); }
+.donut .d-big, .chart .d-big { font: 800 26px var(--f); fill: var(--fg); letter-spacing: -.02em; }
+.donut .d-sm, .chart .d-sm { font: 500 11px var(--f); fill: var(--muted); }
+.seg-d { stroke-dasharray: 0 var(--C); animation: ring 1s cubic-bezier(.2,.8,.2,1) forwards; }
+@keyframes ring { to { stroke-dasharray: var(--len) var(--C); } }
+.b .track { height: 9px; border-radius: 6px; }
+.b .track i { border-radius: 6px; background-image: linear-gradient(90deg, rgba(255,255,255,.0), rgba(255,255,255,.25)); box-shadow: inset 0 -1px 0 rgba(0,0,0,.08); }
+.frase { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.frase b { font-weight: 700; }
+.chart .sl { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 1s ease forwards; }
+.chart .ar { animation: fade 1.2s ease both; }
+.chart .seat { transform-box: fill-box; transform-origin: center; animation: popin .45s cubic-bezier(.2,.9,.3,1.3) both; }
+.chart .wf { transform-box: fill-box; transform-origin: center; animation: popin .4s ease both; cursor: pointer; }
+.chart .wf:hover { stroke: var(--fg); stroke-width: 1.5; }
+@keyframes popin { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.tabs.alc { display: flex; flex-wrap: wrap; }
+.tabs.alc button { flex: 1 1 auto; }
+.tg .sw-line { border-top-style: solid !important; border-top-width: 3px; }
+.mbox .res-grid, .mbox .donut { max-width: 260px; margin: 0 auto 10px; }
+.slide .frase { font-size: 22px; }
+.slide .donut .d-big { font-size: 40px; } .slide .donut .d-sm { font-size: 15px; }
+.maplibregl-ctrl-attrib { font-size: 10.5px; }
+
+@media (prefers-reduced-motion: reduce) { .seg-d { animation: none; stroke-dasharray: var(--len) var(--C); } .chart .sl, .chart .seat, .chart .wf, .chart .ar { animation: none; stroke-dashoffset: 0; } }
+.toast { position: absolute; z-index: 7; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--carbon); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: var(--shadow); max-width: min(440px, calc(100% - 32px)); animation: rise .4s ease both; transition: opacity .5s; }
+.toast.out { opacity: 0; }
+@media (max-width: 760px) { .toast { bottom: calc(var(--peek, 150px) + 16px); } }
+
+.seg button[disabled] { opacity: .32; cursor: not-allowed; }
