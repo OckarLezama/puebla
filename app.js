@@ -619,38 +619,53 @@ function cmpView(u, key, ea, eb, big, mode = 'cand') {
   const A = ELS[ea], B = ELS[eb], aa = agg(u, key, ea), ab = agg(u, key, eb);
   if (!aa.t || !ab.t) return `<div class="note">No hay resultados aquí en ${!aa.t ? A.anio + ' (' + cargoBase(A.cargo) + ')' : B.anio + ' (' + cargoBase(B.cargo) + ')'}.</div>`;
   const ba = sharesOf(ea, aa, mode), bb = sharesOf(eb, ab, mode), wa = verdict(ea, aa), wb = verdict(eb, ab);
-  const ks = [...new Set([...Object.keys(ba), ...Object.keys(bb)])].filter(p => p !== 'IND').sort((x, y) => Math.max(bb[y] || 0, ba[y] || 0) - Math.max(bb[x] || 0, ba[x] || 0)).slice(0, 8);
+  const ks = [...new Set([...Object.keys(ba), ...Object.keys(bb)])].filter(p => p !== 'IND').sort((x, y) => Math.max(bb[y] || 0, ba[y] || 0) - Math.max(bb[x] || 0, ba[x] || 0)).slice(0, 7);
   const ally = p => mode !== 'part' && ranking(ea, aa).concat(ranking(eb, ab)).some(r => leadOf(r.c) === p && r.c.includes('-'));
   const nm = p => p + (ally(p) ? ' y aliados' : '');
-  const card = (E, a, w, tag) => { const who = w ? personFor(E.id, u, key, w.c) : null;
-    return `<div class="cc" style="--c:${w ? candColor(w.c) : 'var(--gris)'}"><div class="cc-t"><span class="cc-tag">${tag}</span><span class="cc-y">${E.anio}${E.cargo.includes('extra') ? '*' : ''}</span><span class="cc-c">${esc(cargoBase(E.cargo))}</span></div>${w ? `<div class="cc-w">Ganó <b>${esc(who || shortCand(w.c))}</b> ${chips(w.c)} <b class="cc-pc">${p1(w.share)}</b></div>` : ''}<div class="cc-p">${a.ln ? 'Participación ' + p1(pct(a.t, a.ln)) : fmt(a.t) + ' votos'}</div></div>`; };
-  const frase = wa && wb ? (leadOf(wa.c) === leadOf(wb.c) ? `<b>${esc(nm(leadOf(wb.c)))}</b> ganó en las dos elecciones.` : `<b>Cambió quien gana:</b> de ${esc(nm(leadOf(wa.c)))} (${A.anio}) a ${esc(nm(leadOf(wb.c)))} (${B.anio}).`) : '';
-  const solo = mode === 'part' ? 'sin votos propios' : 'fue dentro de la coalición de otro partido';
-  const mx = Math.max(...ks.map(p => Math.max(ba[p] || 0, bb[p] || 0)), 1);
-  // columnas agrupadas: A clara, B sólida, diferencia arriba
-  const groups = ks.map((p, i) => { const x = ba[p] || 0, y = bb[p] || 0, d = y - x, c = pcol(p), both = x > 0 && y > 0;
-    const tip = `<b>${esc(nm(p))}</b><div class="tl"><div>A · ${A.anio} ${esc(cargoBase(A.cargo))}<b>${x ? p1(x) : '—'}</b></div><div>B · ${B.anio} ${esc(cargoBase(B.cargo))}<b>${y ? p1(y) : '—'}</b></div></div><span class="m">${both ? `Diferencia: ${d > 0 ? '+' : ''}${d.toFixed(1)} puntos` : `— ${solo}`}</span>`;
-    const bar = (v, cls) => `<div class="cg-b ${cls}">${v > 0 ? `<em>${v.toFixed(1)}</em><i style="height:${(v / mx * 100).toFixed(2)}%;${cls === 'a' ? `background:${mix(c, '#ffffff', .55)};box-shadow:inset 0 0 0 2px ${c}` : `background:${c}`}"></i>` : '<em class="na">—</em>'}</div>`;
-    return `<div class="cg" ${tipA(tip)} style="--d:${i * 70}ms"><div class="cg-d ${!both ? 'na' : Math.abs(d) < .5 ? 'eq' : d > 0 ? 'up' : 'dn'}">${both ? (d > 0 ? '▲ +' : d < 0 ? '▼ ' : '') + d.toFixed(1) : ''}</div><div class="cg-bars">${bar(x, 'a')}${bar(y, 'b')}</div></div>`; }).join('');
-  const labels = ks.map(p => `<div class="vc-x">${chip(p, 1)}${ally(p) ? '<small>y aliados</small>' : ''}</div>`).join('');
+  const tag = (E) => `${E.anio}${E.cargo.includes('extra') ? '*' : ''} · ${esc(CSHORT[cargoBase(E.cargo)])}`;
+  const kc = (E, a, w, L) => { const who = w ? personFor(E.id, u, key, w.c) : null, c = w ? candColor(w.c) : '#828386';
+    return `<div class="xk-c" style="--c:${c}"><span><b class="cc-tag">${L}</b>${tag(E)}</span><b style="color:${c}">${w ? esc(candShort(w.c)) : '—'}</b><small>${who ? esc(who) + ' · ' : ''}${w ? p1(w.share) + ' · ventaja ' + w.margin.toFixed(1) + ' pts' : ''}</small><small>${a.ln ? 'Participación ' + p1(pct(a.t, a.ln)) : fmt(a.t) + ' votos'}</small></div>`; };
   const pa = aa.ln ? pct(aa.t, aa.ln) : null, pb = ab.ln ? pct(ab.t, ab.ln) : null;
-  return `<div class="cv${big ? ' big' : ''}"><div class="cc-row">${card(A, aa, wa, 'A')}${card(B, ab, wb, 'B')}</div>
-    ${frase ? `<p class="frase">${frase}${pa != null && pb != null ? ` La participación ${Math.abs(pb - pa) < .5 ? 'quedó igual' : pb > pa ? 'subió' : 'bajó'} de ${p1(pa)} a ${p1(pb)}.` : ''}</p>` : ''}
-    <div class="db-lg"><span><i class="lg-a"></i>A · ${A.anio}</span><span><i class="lg-b"></i>B · ${B.anio}</span><span class="db-sc">% de votos · arriba, diferencia en puntos</span></div>
-    <div class="cgc" style="--n:${ks.length}"><div class="cg-plot">${groups}</div><div class="vc-xs">${labels}</div></div>
-    <div class="src">${mode === 'part' ? 'Votos con el logo de un solo partido.' : 'Cada partido junto con sus aliados en esa elección.'} «—» = ${solo}.</div></div>`;
+  const same = wa && wb && leadOf(wa.c) === leadOf(wb.c);
+  const kd = `<div class="xk-c" style="--c:${same ? 'var(--acc)' : '#E08A3C'}"><span>Resultado</span><b>${wa && wb ? (same ? 'Repitió' : 'Cambió quien gana') : '—'}</b><small>${wa && wb ? (same ? `${esc(nm(leadOf(wb.c)))} ganó las dos` : `de ${esc(plusName(wa.c))} a ${esc(plusName(wb.c))}`) : ''}</small>${pa != null && pb != null ? `<small>Participación ${dBadge(pb - pa, ' pts')}</small>` : ''}</div>`;
+  // columnas agrupadas con escala
+  const vmax = Math.max(...ks.map(p => Math.max(ba[p] || 0, bb[p] || 0)), 5), step = vmax > 60 ? 20 : 10, top = Math.ceil(vmax * 1.15 / step) * step, H = big ? 260 : 200;
+  const grid = Array.from({ length: Math.floor(top / step) + 1 }, (_, i) => i * step).map(t => `<div class="vg" style="bottom:${t / top * 100}%"><span>${t}%</span></div>`).join('');
+  const solo = mode === 'part' ? 'sin votos propios' : 'fue dentro de la coalición de otro partido';
+  const groups = ks.map((p, i) => { const x = ba[p] || 0, y = bb[p] || 0, d = y - x, c = pcol(p), both = x > 0 && y > 0;
+    const tip = `<b>${esc(nm(p))}</b><div class="tl"><div>A · ${A.anio}<b>${x ? p1(x) : '—'}</b></div><div>B · ${B.anio}<b>${y ? p1(y) : '—'}</b></div></div><span class="m">${both ? `Diferencia: ${sgn(d)} puntos` : `— ${solo}`}</span>`;
+    const bar = (v, cls) => `<div class="cb ${cls}">${v > 0 ? `<em style="bottom:calc(${(v / top * 100).toFixed(2)}% + 3px)">${v.toFixed(1)}</em><i style="height:${(v / top * 100).toFixed(2)}%;${cls === 'a' ? `background:repeating-linear-gradient(135deg,${mix(c, '#ffffff', .35)} 0 3px,${mix(c, '#ffffff', .7)} 3px 6px)` : `background:${c}`}"></i>` : ''}</div>`;
+    return `<div class="cgx" ${tipA(tip)} style="--d:${i * 70}ms;--c:${c}"><div class="cgx-a">${bar(x, 'a')}${bar(y, 'b')}</div><div class="vc2-n"><b>${esc(p)}${ally(p) ? '+' : ''}</b>${both ? dBadge(d) : `<span class="db2 na">${x ? 'solo A' : 'solo B'}</span>`}</div></div>`; }).join('');
+  // dónde cambió el ganador
+  let ch = '';
+  if (big) { const lvl = u === 'est' ? 'mun' : (u === 'mun' || u === 'dl' || u === 'df' || u === 'ja' || u === 'col') ? 'sec' : null;
+    if (lvl) { const UA = Object.fromEntries(subUnits(lvl, u, key, ea).map(x => [x.k, x])), UB = subUnits(lvl, u, key, eb);
+      const rows = UB.filter(x => UA[x.k] && UA[x.k].w && x.w && !x.w.tie && !UA[x.k].w.tie).map(x => ({ x, a: UA[x.k], c: leadOf(UA[x.k].w.c) !== leadOf(x.w.c) }));
+      const nc = rows.filter(r => r.c).length, flows = {};
+      rows.filter(r => r.c).forEach(r => { const f = leadOf(r.a.w.c) + '→' + leadOf(r.x.w.c); flows[f] = (flows[f] || 0) + 1; });
+      const lw = lvl === 'mun' ? ['municipios', 'Municipio'] : ['secciones', 'Sección'];
+      if (rows.length) ch = `<div class="dz"><div class="dz-bar"><span class="xp-lbl">Dónde cambió quien gana</span><span class="pill ${nc ? '' : 'up'}">${fmt(nc)} de ${fmt(rows.length)} ${lw[0]} cambiaron (${pct(nc, rows.length).toFixed(0)}%)</span></div>
+        ${nc ? `<div class="flw">${Object.entries(flows).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([f, n]) => { const [p, q] = f.split('→'); return `<span class="fl">${chip(p, 1)}<em>→</em>${chip(q, 1)}<b>${fmt(n)}</b></span>`; }).join('')}</div>
+        <table class="dzt"><thead><tr><th>${lw[1]}</th><th>Ganó en ${A.anio}</th><th>Ganó en ${B.anio}</th><th>Ventaja ${B.anio}</th><th>Electores</th></tr></thead><tbody>
+        ${rows.filter(r => r.c).sort((a, b) => b.x.a.ln - a.x.a.ln).slice(0, 60).map(r => `<tr data-go2="${lvl}:${r.x.k}"><td><b>${esc(r.x.name)}</b></td><td><span class="dz-w"><i style="background:${candColor(r.a.w.c)}"></i>${esc(plusName(r.a.w.c))} · ${r.a.w.share.toFixed(0)}%</span></td><td><span class="dz-w"><i style="background:${candColor(r.x.w.c)}"></i>${esc(plusName(r.x.w.c))} · ${r.x.w.share.toFixed(0)}%</span></td><td><span class="dz-v ${compLvl(r.x.w.margin)[0]}"><b>${r.x.w.margin.toFixed(1)} pts</b></span></td><td>${fmt(r.x.a.ln)}</td></tr>`).join('')}</tbody></table>
+        ${nc > 60 ? '<p class="xp-hint">Se muestran las 60 con más electores.</p>' : ''}` : ''}</div>`; } }
+  return `<div class="cvx"><div class="xk three">${kc(A, aa, wa, 'A')}${kc(B, ab, wb, 'B')}${kd}</div>
+    <div class="cgc2"><div class="cmp-lg"><span><i class="ia"></i>A · ${A.anio}</span><span><i class="ib"></i>B · ${B.anio}</span><span class="r">% de votos · debajo, diferencia en puntos</span></div>
+    <div class="vc2" style="--h:${H}px;--n:${ks.length}"><div class="vc2-g" style="top:0">${grid}</div><div class="cgx-p">${groups}</div></div></div>
+    <div class="src">${mode === 'part' ? 'Votación propia de cada partido.' : 'Cada partido junto con sus aliados en esa elección.'}</div>${ch}</div>`;
 }
 function openCompare() {
   const { u, key } = current();
   CMP.b = S.el; CMP.a = (cmpEl() || ELS[S.el]).id;
   const pick = side => { const e = ELS[CMP[side]], cargo = cargoBase(e.cargo);
-    return `<div class="cp-side cp-${side}"><div class="cp-lbl"><span class="cc-tag">${side.toUpperCase()}</span>Elección ${side === 'a' ? 'anterior' : 'a comparar'}</div><select class="cmp-sel" data-side="${side}" aria-label="Cargo ${side.toUpperCase()}">${CARGOS.map(c => `<option ${c === cargo ? 'selected' : ''}>${c}</option>`).join('')}</select>
+    return `<div class="cpx"><b class="cc-tag">${side.toUpperCase()}</b><div class="tabs">${CARGOS.map(c => `<button data-side="${side}" data-cg="${c}" class="${c === cargo ? 'on' : ''}">${CSHORT[c]}</button>`).join('')}</div>
       <div class="tabs">${CAT.elecciones.filter(x => cargoBase(x.cargo) === cargo).map(x => `<button data-side="${side}" data-e="${x.id}" class="${x.id === e.id ? 'on' : ''}">${x.anio}${x.cargo.includes('extra') ? '*' : ''}</button>`).join('')}</div></div>`; };
-  const draw = () => { $('#cmp-body').innerHTML = `<div class="cp-pick">${pick('a')}${pick('b')}</div><div class="cp-mode"><span class="xp-lbl">Ver por</span>${partesTabs(CMP.mode, 'cmp-partes')}</div>${cmpView(u, key, CMP.a, CMP.b, true, CMP.mode)}`; animate($('#cmp-body')); bindTips($('#cmp-body'));
-    $$('#cmp-body select[data-side]').forEach(s => s.onchange = () => { const es = CAT.elecciones.filter(x => cargoBase(x.cargo) === s.value).sort((a, b) => b.anio - a.anio); CMP[s.dataset.side] = es[0].id; draw(); });
-    $$('#cmp-body button[data-side]').forEach(bt => bt.onclick = () => { CMP[bt.dataset.side] = bt.dataset.e; draw(); });
-    $$('#cmp-partes button').forEach(b => b.onclick = () => { CMP.mode = b.dataset.p; draw(); }); };
-  openModal(`<h3 id="mtitle">Comparar elecciones</h3><p class="msub">${esc(unitName(u, key))} · elige la elección A y la B</p><div id="cmp-body"></div>`);
+  const draw = () => { $('#cmp-body').innerHTML = `<div class="xp-bar">${pick('a')}${pick('b')}<div class="cpx"><span class="xp-lbl">Ver</span>${partesTabs(CMP.mode, 'cmp-partes')}</div></div>${cmpView(u, key, CMP.a, CMP.b, true, CMP.mode)}`; animate($('#cmp-body')); bindTips($('#cmp-body'));
+    $$('#cmp-body button[data-cg]').forEach(b => b.onclick = () => { const es = CAT.elecciones.filter(x => cargoBase(x.cargo) === b.dataset.cg && !x.cargo.includes('extra')).sort((a, b) => b.anio - a.anio); CMP[b.dataset.side] = (b.dataset.side === 'a' && es[1] ? es[1] : es[0]).id; draw(); });
+    $$('#cmp-body button[data-e]').forEach(bt => bt.onclick = () => { CMP[bt.dataset.side] = bt.dataset.e; draw(); });
+    $$('#cmp-partes button').forEach(b => b.onclick = () => { CMP.mode = b.dataset.p; draw(); });
+    $$('#cmp-body [data-go2]').forEach(tr => tr.onclick = () => { const [lv, k] = tr.dataset.go2.split(':'); $('#modal').hidden = true; hideTip(); if (CMP.b !== S.el) setEl(CMP.b); goTo(lv, k); }); };
+  openModal(`<div class="xp-top"><div><h3 id="mtitle">Comparar elecciones</h3><small>${esc(unitName(u, key))} · elige la elección A y la B</small></div></div><div id="cmp-body"></div>`);
   draw();
 }
 
