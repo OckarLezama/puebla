@@ -528,7 +528,7 @@ function afiliados() {
 }
 
 /* ---------- desglose por unidad ---------- */
-function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? [['sec', 'Sección']].concat(MS.key === 115 ? [['ja', 'Junta auxiliar']] : []) : (u === 'dl' || u === 'df') ? (new Set(secsOfUnit(u, MS.key).map(s => SECMUN[s])).size > 1 ? [['mun', 'Municipio'], ['sec', 'Sección']] : [['sec', 'Sección']]) : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
+function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? (MS.key === 115 && GEO.juntas.features.length ? [['ja', 'Junta auxiliar']] : [['sec', 'Sección']]) : (u === 'dl' || u === 'df') ? (new Set(secsOfUnit(u, MS.key).map(s => SECMUN[s])).size > 1 ? [['mun', 'Municipio'], ['sec', 'Sección']] : [['sec', 'Sección']]) : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
 function subUnits(lvl, u, key, eid) {
   const out = [], E = EST[eid]; if (!E) return out;
   const push = (k, a, name) => { if (!a.t || !a.n) return; const w = verdict(eid, a); out.push({ k, a, w, name, r: ranking(eid, a) }); };
@@ -662,7 +662,7 @@ function toast(t) { const d = document.createElement('div'); d.className = 'toas
 function renderPanel() {
   const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), name = unitName(u, key), cargo = cargoBase(m.cargo);
   const crumb = S.sel ? `<div class="crumb"><button id="back">${esc(unitName(S.foco.u, S.foco.key))}</button><span>›</span><span>${esc(VK(S.sel.u).l)}</span></div>` : `<div class="crumb">${esc(m.cargo)} · ${m.anio}</div>`;
-  let h = `<div class="ph">${crumb}<h2>${esc(name)}</h2><div class="acts-top"><button class="btn pri" id="btn-cmp">⇄ Comparar elecciones</button><button class="btn" id="btn-link" title="Copia un enlace que abre esta misma vista">🔗 Copiar enlace</button></div></div>`;
+  let h = `<div class="ph">${crumb}<h2>${esc(name)}</h2><div class="acts-top"><button class="btn pri" id="btn-cmp">⇄ Comparar elecciones</button></div></div>`;
   const dg = datosGen(u, key); if (dg) h += card('dat', 'Datos generales', dg, { sub: `${esc(name)} · corte ${esc(CAT.padron.corte)}`, zoom: false });
   if (a.n && a.t) h += card('res', 'Resultados electorales', resHead(S.el, a, u, key) + `<div class="k2-tabs">${partesTabs(S.partes)}</div>` + vcols(S.el, a, u, key, S.partes) + resSummary(S.el, a, u, key), { sub: `${esc(CSHORT[cargo])} ${m.anio} · ${esc(name)}` });
   else if (u !== 'sec') h += `<div class="note">No hubo elección de ${esc(m.cargo.toLowerCase())} en ${m.anio} aquí.</div>`;
@@ -684,7 +684,6 @@ function renderPanel() {
   $$('#pbody [data-pin]').forEach(c => c.onclick = () => { hideTip(); S.pinB = S.pinB === c.dataset.pin ? null : c.dataset.pin; S.pinC = null; const y = $('#pbody').scrollTop; renderPanel(); $('#pbody').scrollTop = y; highlight();
     if (S.pinB) { const ks = Object.entries(MUNAGG).filter(([, u]) => u.w && !u.w.tie && leadOf(u.w.c) === S.pinB).map(([k]) => +k); const gs = GEO.municipios.features.filter(f => ks.includes(f.properties.municipio)); if (gs.length) fitGeom({ coordinates: gs.map(f => f.geometry.coordinates) }); } });
   $$('#pbody [data-xls-ayu]').forEach(b => b.onclick = e => { e.stopPropagation(); xlsAyu(b.dataset.xlsAyu); });
-  $('#btn-link').onclick = copyLink;
   const back = $('#back'); if (back) back.onclick = () => select(null);
   $$('#partes button').forEach(b => b.onclick = () => { S.partes = b.dataset.p; renderPanel(); });
   $$('[data-go]').forEach(b => b.onclick = () => { const [v, k] = b.dataset.go.split(/:(.*)/s); goTo(v, k); });
@@ -773,7 +772,7 @@ function legend() {
     const yrs = histEls().map(e => e.anio);
     h += S.modo === 'comp'
       ? `<div class="lg-sub">Qué tan reñida fue: ventaja del ganador sobre el 2º lugar</div><div class="lg-win">${[['alta', 'Menos de 5 pts'], ['media', '5 a 15 pts'], ['baja', 'Más de 15 pts']].map(([k, l]) => `<span class="it"><span class="sw" style="background:${COMP_COL[k]}"></span>${l}<b>${cnt[k] || 0}</b></span>`).join('')}</div>`
-      : `<div class="lg-sub"><b>Bastión:</b> ganó la misma fuerza en ${yrs.join(', ')}. <b>Alternó:</b> ganaron fuerzas distintas. Cada coalición cuenta para su partido principal (MORENA, PAN, PRI o MC).</div><div class="lg-win">${Object.entries(cnt).filter(([k]) => k !== '_alt').sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="it">${chip(k, 1)}<b>${n}</b></span>`).join('')}<span class="it"><span class="sw" style="background:${ALT_COL}"></span>Alternó<b>${cnt._alt || 0}</b></span></div>${cnt._alt ? `<div class="lg-pat"><span class="lg-pl">Cómo alternó (${yrs.join(' → ')}):</span>${Object.entries(pats).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([pt, n]) => `<span class="it">${pt.split('→').map(p => chip(p, 1)).join('<em>→</em>')}<b>${n}</b></span>`).join('')}</div>` : ''}`;
+      : `<div class="lg-sub"><b>Bastión:</b> ganó la misma fuerza en ${yrs.join(', ')}. <b>Alternó:</b> ganaron fuerzas distintas. Cada coalición cuenta para su partido principal (MORENA, PAN, PRI o MC).</div><div class="lg-win">${Object.entries(cnt).filter(([k]) => k !== '_alt').sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="it">${chip(k, 1)}<b>${n}</b></span>`).join('')}<span class="it"><span class="sw" style="background:${ALT_COL}"></span>Alternó<b>${cnt._alt || 0}</b></span></div>`;
     h += `<div class="lg-n">${tot} ${({ sec: 'secciones', col: 'colonias', ja: 'juntas auxiliares', mun: 'municipios', dl: 'distritos locales', df: 'distritos federales' })[S.vista]} en total</div>`; }
   else if (S.modo === 'cambio') { const c = cmpEl(); const n = Object.entries(AGG).filter(([k, u]) => u.w && c && (w0 => w0 && leadOf(w0.c) !== leadOf(u.w.c))(verdict(c.id, agg(S.vista, S.vista === 'ja' ? k : +k, c.id)))).length;
     h += `<div class="items"><span class="it"><span class="sw" style="background:${g}"></span>Cambió de partido (${n})</span><span class="it"><span class="sw" style="background:${mix(g, bg, .8)}"></span>Repitió</span></div>`; }
@@ -967,8 +966,8 @@ function buildSearch() {
   for (const f of GEO.secciones.features) SEARCH.push({ t: 'Sección ' + f.properties.seccion, s: String(f.properties.seccion), k: 'sec', id: f.properties.seccion, h: MUNN[f.properties.municipio] });
   for (const f of GEO.colonias.features) SEARCH.push({ t: f.properties.nombre, s: norm(f.properties.nombre) + ' ' + f.properties.cp, k: 'col', id: f.properties.cid, h: MUNN[f.properties.municipio] + ' · CP ' + f.properties.cp });
   for (const f of GEO.juntas.features) SEARCH.push({ t: f.properties.ja, s: norm(f.properties.ja), k: 'ja', id: f.properties.ja, h: 'Junta auxiliar' });
-  for (const f of GEO.dl.features) SEARCH.push({ t: 'Distrito local ' + f.properties.distrito_l, s: 'distrito local ' + f.properties.distrito_l + ' dl' + f.properties.distrito_l, k: 'dl', id: f.properties.distrito_l, h: '' });
-  for (const f of GEO.df.features) SEARCH.push({ t: 'Distrito federal ' + f.properties.distrito_f, s: 'distrito federal ' + f.properties.distrito_f + ' df' + f.properties.distrito_f, k: 'df', id: f.properties.distrito_f, h: '' });
+  for (const f of GEO.dl.features) SEARCH.push({ t: 'Distrito local ' + f.properties.distrito_l, s: (n => `distrito local ${n} dtto loc ${n} dl${n} dl ${n} local ${n}`)(f.properties.distrito_l), k: 'dl', id: f.properties.distrito_l, h: 'Dtto Loc' });
+  for (const f of GEO.df.features) SEARCH.push({ t: 'Distrito federal ' + f.properties.distrito_f, s: (n => `distrito federal ${n} dtto fed ${n} df${n} df ${n} federal ${n}`)(f.properties.distrito_f), k: 'df', id: f.properties.distrito_f, h: 'Dtto Fed' });
   const q = $('#q'), ul = $('#qres'); let hits = [], on = 0;
   const show = () => { ul.innerHTML = hits.map((x, i) => `<li><button data-i="${i}" class="${i === on ? 'on' : ''}"><span>${esc(x.t)}</span><small>${esc(x.h || '')}</small></button></li>`).join(''); ul.hidden = !hits.length; ul.querySelectorAll('button').forEach(b => b.onmousedown = e => { e.preventDefault(); pick(hits[+b.dataset.i]); }); };
   const pick = x => { ul.hidden = true; q.value = ''; q.blur(); goTo(x.k, x.id); };
@@ -1142,17 +1141,22 @@ async function start(session) {
   await mapP;
   buildControls(); addLayers(); buildSearch(); sheet();
   setVista(S.vista); applyCapas(); fitGeom(geomOf(HOME.u, HOME.key), 0); HOME_VIEW = { c: map.getCenter(), z: map.getZoom() };
-  applyHash();
+  applyHash(); idleWatch();
   $('#loading').hidden = true;
   if (!store.get('pe_hint')) { const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = 'Toca cualquier municipio para acercarte y ver sus secciones. Con <b>Volver</b> regresas al inicio.'; $('.stage').appendChild(t);
     setTimeout(() => t.classList.add('out'), 7000); setTimeout(() => t.remove(), 7600); store.set('pe_hint', 1); }
   const mq = window.matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener && mq.addEventListener('change', retheme);
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }
+/* la sesión se cierra sola tras 30 minutos sin actividad */
+const IDLE_MS = 30 * 60 * 1000; let IDLE_T = null;
+function idleWatch() { const reset = () => { clearTimeout(IDLE_T); IDLE_T = setTimeout(() => { sess.del('pe_s'); sess.set('pe_idle', 1); location.reload(); }, IDLE_MS); };
+  ['pointerdown', 'keydown', 'wheel', 'touchstart', 'mousemove'].forEach(ev => window.addEventListener(ev, reset, { passive: true })); reset(); }
 async function boot() {
   const saved = sess.get('pe_s');
   if (saved) { try { await start(saved); return; } catch (e) { console.error(e); sess.del('pe_s'); location.reload(); return; } }
   drawLoginMap();
+  if (sess.get('pe_idle')) { sess.del('pe_idle'); const er = $('#lg-err'); er.textContent = 'Tu sesión se cerró por 30 minutos sin actividad. Vuelve a entrar.'; er.hidden = false; }
   $('#login-form').onsubmit = async e => {
     e.preventDefault(); const btn = $('#lg-btn'), err = $('#lg-err'); err.hidden = true; btn.disabled = true; btn.textContent = 'Verificando…';
     try { const s = await login($('#lg-user').value, $('#lg-pass').value); sess.set('pe_s', s); await start(s); }
