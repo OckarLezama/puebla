@@ -336,6 +336,11 @@ const allyName = (eid, p) => p + (ELS[eid].cand.some(c => leadOf(c) === p && c.i
 const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1);
 const dBadge = (d, sfx = '') => `<span class="db2 ${Math.abs(d) < .5 ? 'eq' : d > 0 ? 'up' : 'dn'}">${sgn(d)}${sfx}</span>`;
 const compLvl = m => m < 5 ? ['alta', 'competencia alta'] : m < 15 ? ['media', 'competencia media'] : ['baja', 'competencia baja'];
+/* agrupa candidaturas por la fuerza que las encabeza: en un distrito o en todo el estado cada municipio tuvo coaliciones distintas */
+function rankB(eid, a) { const by = {}; for (const x of ranking(eid, a)) { const k = x.c.startsWith('CAND_IND') ? x.c : leadOf(x.c); (by[k] = by[k] || { k, v: 0, cs: [] }); by[k].v += x.v; by[k].cs.push(x.c); }
+  return Object.values(by).sort((p, q) => q.v - p.v).map(g => Object.assign(g, { one: g.cs.length === 1 ? g.cs[0] : null, col: g.cs.length === 1 ? candColor(g.cs[0]) : pcol(g.k), name: g.cs.length === 1 ? candShort(g.cs[0]) : g.k + (g.cs.some(c => c.includes('-')) ? ' y aliados' : ''), short: g.cs.length === 1 ? plusName(g.cs[0]) : g.k + (g.cs.some(c => c.includes('-')) ? '+' : '') })); }
+function topB(eid, a, u, key) { const g = rankB(eid, a); if (!g.length || !a.t) return null; const g0 = g[0], g1 = g[1];
+  return { g0, g1, share: pct(g0.v, a.t), margin: pct(g0.v - (g1 ? g1.v : 0), a.t), tie: g1 && g1.v === g0.v, who: g0.one ? personFor(eid, u, key, g0.one) : null, many: g.some(x => x.cs.length > 1) }; }
 function prevShares(eid, u, key, mode) { const p = prevOf(eid); if (!p) return null; const a = agg(u, key, p.id); if (!a.t) return null; return { e: p, a, by: sharesOf(p.id, a, mode) }; }
 function spark(vals, col, W = 110, H = 28, dotLast = true) {
   const v = vals.filter(x => x != null); if (v.length < 2) return '';
@@ -349,7 +354,8 @@ function vcols(eid, a, u, key, mode, big) {
   const m = ELS[eid], w = verdict(eid, a); if (!a.t) return '';
   let items = mode === 'part'
     ? m.part.map((p, i) => ({ id: p, k: p, v: a.p ? a.p[i] : 0, segs: [{ p, v: a.p ? a.p[i] : 0 }] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v)
-    : ranking(eid, a).map(x => ({ id: x.c, cand: x.c, k: leadOf(x.c), v: x.v, segs: candParts(eid, a, x.c) }));
+    : rankB(eid, a).map(g => { const sg = {}; g.cs.forEach(c => candParts(eid, a, c).forEach(s => { const kk = (s.sh ? '~' : '') + s.p; (sg[kk] = sg[kk] || { p: s.p, v: 0, sh: s.sh }).v += s.v; }));
+        return { id: g.one || g.k, cand: g.one, grp: g, k: g.one ? leadOf(g.one) : g.k, v: g.v, segs: Object.values(sg).sort((x, y) => (x.sh ? 1 : 0) - (y.sh ? 1 : 0) || y.v - x.v) }; });
   const N = big ? 9 : 5;
   if (items.length > N) { const rest = items.slice(N - 1), v = rest.reduce((s, x) => s + x.v, 0); items = items.slice(0, N - 1); items.push({ id: '_o', v, segs: [{ p: '_o', v }], otros: rest }); }
   if (!items.length) return '';
@@ -358,13 +364,13 @@ function vcols(eid, a, u, key, mode, big) {
   const vmax = Math.max(...vals), step = vmax > 60 ? 20 : 10, top = Math.ceil(vmax * 1.12 / step) * step, H = big ? 300 : 190;
   const grid = Array.from({ length: Math.floor(top / step) + 1 }, (_, i) => i * step).map(t => `<div class="vg" style="bottom:${t / top * 100}%"><span>${t}%</span></div>`).join('');
   const cols = items.map((x, i) => {
-    const p = pct(x.v, a.t), lead = mode !== 'part' && i === 0 && w && !w.tie, who = x.cand ? personFor(eid, u, key, x.cand) : null, pr = pv && x.k ? pv.by[x.k] : null;
-    const head = x.otros ? 'Otros' : x.cand ? (who || candTitle(x.cand)) : pname(x.id);
-    const brk = x.otros ? x.otros.map(o => `<div><span class="sw" style="background:${o.cand ? candColor(o.cand) : pcol(o.id)}"></span>${esc(o.cand ? candShort(o.cand) : o.id)}<b>${fmt(o.v)}</b></div>`).join('')
+    const p = pct(x.v, a.t), lead = mode !== 'part' && i === 0 && (!items[1] || items[1].v < x.v), who = x.cand ? personFor(eid, u, key, x.cand) : null, pr = pv && x.k ? pv.by[x.k] : null;
+    const head = x.otros ? 'Otros' : x.cand ? (who || candTitle(x.cand)) : x.grp ? x.grp.name + ` (${x.grp.cs.length} candidaturas distintas)` : pname(x.id);
+    const brk = x.otros ? x.otros.map(o => `<div><span class="sw" style="background:${o.grp ? o.grp.col : pcol(o.id)}"></span>${esc(o.grp ? o.grp.name : o.id)}<b>${fmt(o.v)}</b></div>`).join('')
       : (x.segs.length > 1 ? x.segs.map(s => `<div><span class="sw" style="${segBg(s)}"></span>${s.sh ? 'Con varios logos' : esc(s.p)}<b>${p1(pct(s.v, a.t))}</b></div>`).join('') : '');
     const tip = `<b>${esc(head)}</b>${who ? `<span class="m">${esc(candTitle(x.cand))}</span>` : ''}<div class="tv"><strong>${p1(p)}</strong> ${fmt(x.v)} votos</div>${brk ? `<div class="tl">${brk}</div>` : ''}${pr ? `<span class="m">En ${pv.e.anio}: ${p1(pr)} (${sgn(p - pr)} pts)</span>` : ''}${!x.otros ? '<span class="m">En el mapa: dónde votaron más</span>' : ''}`;
     const segs = x.segs.map(s => { const px = (H - 10) * pct(s.v, a.t) / top; return `<i style="flex:${s.v} 0 0;${segBg(s)}">${x.segs.length > 1 && px >= 16 ? `<span>${s.sh ? 'Varios' : esc(s.p)}</span>` : ''}</i>`; }).join('');
-    const nm = x.otros ? 'Otros' : x.cand ? plusName(x.cand) : x.id, col = x.otros ? 'var(--gris)' : x.cand ? candColor(x.cand) : pcol(x.id);
+    const nm = x.otros ? 'Otros' : x.grp ? x.grp.short : x.id, col = x.otros ? 'var(--gris)' : x.grp ? x.grp.col : pcol(x.id);
     return `<div class="vc2-c${lead ? ' lead' : ''}" ${x.cand ? `data-cand="${x.cand}"` : mode === 'part' && !x.otros ? `data-part="${x.id}"` : ''} ${tipA(tip)} style="--d:${i * 70}ms;--c:${col}">
       ${lead ? '<span class="vc2-tag">1er lugar</span>' : '<span></span>'}
       <div class="vc2-a"><div class="vc2-bar" style="height:${(p / top * 100).toFixed(2)}%">${segs}</div><b class="vc2-v" style="bottom:calc(${(p / top * 100).toFixed(2)}% + 4px)">${p1(p).replace(' ', '')}</b>${pr ? `<span class="vc2-ref" style="bottom:${(pr / top * 100).toFixed(2)}%"></span>` : ''}</div>
@@ -374,15 +380,14 @@ function vcols(eid, a, u, key, mode, big) {
     <div class="vc2-lg">${mode === 'part' ? '' : '<span><i class="sw hatch"></i>colores: aporte de cada partido</span>'}${pv ? `<span><i class="ref"></i>raya: ${pv.e.anio}</span>` : ''}</div>`;
 }
 function resHead(eid, a, u, key) {
-  const w = verdict(eid, a); if (!w) return '';
-  const r = ranking(eid, a), who = personFor(eid, u, key, w.c), c = candColor(w.c);
-  return `<div class="hl"><span class="hl-d" style="background:${c}"></span><b class="hl-v" style="color:${c}" data-n="${w.share.toFixed(1)}" data-d="1" data-s="%">0%</b><span class="hl-n">${esc(candShort(w.c))}${who ? `<small>${esc(who)}</small>` : ''}</span></div>
-    ${r[1] ? `<span class="pill">${w.margin.toFixed(1)} pts de ventaja sobre ${esc(plusName(r[1].c))}</span>` : ''}`;
+  const t = topB(eid, a, u, key); if (!t) return '';
+  return `<div class="hl"><span class="hl-d" style="background:${t.g0.col}"></span><b class="hl-v" style="color:${t.g0.col}" data-n="${t.share.toFixed(1)}" data-d="1" data-s="%">0%</b><span class="hl-n">${esc(t.g0.name)}${t.who ? `<small>${esc(t.who)}</small>` : t.many ? '<small>Suma de las candidaturas que encabezó en cada municipio</small>' : ''}</span></div>
+    ${t.g1 ? `<span class="pill">${t.margin.toFixed(1)} pts de ventaja sobre ${esc(t.g1.short)}</span>` : ''}`;
 }
 function resSummary(eid, a, u, key) {
-  const m = ELS[eid], w = verdict(eid, a); if (!w) return '';
-  const r = ranking(eid, a), p = prevOf(eid), ap = p ? agg(u, key, p.id) : null, part = a.ln ? pct(a.t, a.ln) : null, pp = ap && ap.ln && ap.t ? pct(ap.t, ap.ln) : null;
-  return `<p class="sum"><b style="color:${candColor(w.c)}">${esc(candShort(w.c))}</b> ganó ${esc(cargoBase(m.cargo).toLowerCase())} ${m.anio} por <b>${w.margin.toFixed(1)} pts</b>${r[1] ? ` sobre ${esc(candShort(r[1].c))}` : ''}${part != null ? `; votó ${part.toFixed(0)} %${pp != null ? `, ${Math.abs(part - pp).toFixed(1)} pts ${part >= pp ? 'más' : 'menos'} que en ${p.anio}` : ''}` : ''}.</p>`;
+  const m = ELS[eid], t = topB(eid, a, u, key); if (!t) return '';
+  const p = prevOf(eid), ap = p ? agg(u, key, p.id) : null, part = a.ln ? pct(a.t, a.ln) : null, pp = ap && ap.ln && ap.t ? pct(ap.t, ap.ln) : null;
+  return `<p class="sum"><b style="color:${t.g0.col}">${esc(t.g0.name)}</b> ${t.many ? 'sumó más votos' : 'ganó'} en ${esc(cargoBase(m.cargo).toLowerCase())} ${m.anio} con <b>${t.margin.toFixed(1)} pts</b> de ventaja${t.g1 ? ` sobre ${esc(t.g1.name)}` : ''}${part != null ? `; votó ${part.toFixed(0)} %${pp != null ? `, ${Math.abs(part - pp).toFixed(1)} pts ${part >= pp ? 'más' : 'menos'} que en ${p.anio}` : ''}` : ''}.</p>`;
 }
 
 /* ---------- evolución del voto: curvas suaves, el líder destacado, ganador arriba ---------- */
@@ -492,7 +497,7 @@ function afiliados() {
 }
 
 /* ---------- desglose por unidad ---------- */
-function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? [['sec', 'Sección']].concat(MS.key === 115 ? [['ja', 'Junta auxiliar']] : []) : (u === 'dl' || u === 'df') ? [['mun', 'Municipio'], ['sec', 'Sección']] : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
+function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? [['sec', 'Sección']].concat(MS.key === 115 ? [['ja', 'Junta auxiliar']] : []) : (u === 'dl' || u === 'df') ? (new Set(secsOfUnit(u, MS.key).map(s => SECMUN[s])).size > 1 ? [['mun', 'Municipio'], ['sec', 'Sección']] : [['sec', 'Sección']]) : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
 function subUnits(lvl, u, key, eid) {
   const out = [], E = EST[eid]; if (!E) return out;
   const push = (k, a, name) => { if (!a.t || !a.n) return; const w = verdict(eid, a); out.push({ k, a, w, name, r: ranking(eid, a) }); };
@@ -511,37 +516,37 @@ function placeOpts(u, key) {
   const o = [[u, key]], add = (a, b) => { if (!o.some(x => x[0] === a && x[1] === b)) o.push([a, b]); };
   const mm = munOfUnit(u, key); if (mm != null) add('mun', mm); add('est', 0); return o;
 }
-function distsOf(u0, k0, t) { const p = t === 'dl' ? 'distrito_l' : 'distrito_f'; if (u0 === 'est') return GEO[t].features.map(f => f.properties[p]).sort((a, b) => a - b);
+function distsOf(u0, k0, t) { const p = t === 'dl' ? 'distrito_l' : 'distrito_f'; if (u0 === 'est') return [];
   return [...new Set(secsOfUnit(u0 === 'sec' || u0 === 'col' || u0 === 'ja' ? 'mun' : u0, u0 === 'mun' || u0 === 'dl' || u0 === 'df' ? k0 : munOfUnit(u0, k0)).map(s => GEO.secciones.byId[s].properties[p]))].sort((a, b) => a - b); }
 function openExplore(kind) { const { u, key } = current(); Object.assign(MS, { kind, u0: u, k0: key, u, key, el: S.el, partes: S.partes || 'cand', lvl: null, sort: 'comp' }); openModal('<div id="xp"></div>'); drawExplore(); }
 function drawExplore() {
   const { kind, u, key, el } = MS, m = ELS[el], a = agg(u, key, el), w = verdict(el, a), name = unitName(u, key), cargo = cargoBase(m.cargo), r = ranking(el, a);
   const dl = distsOf(MS.u0, MS.k0, 'dl'), df = distsOf(MS.u0, MS.k0, 'df');
-  const sel = (t, list, lbl) => `<select data-pick="${t}" aria-label="${lbl}"><option value="">${lbl}…</option>${list.map(x => `<option value="${x}" ${u === t && key === x ? 'selected' : ''}>${t === 'mun' ? esc(MUNN[x]) : lbl + ' ' + x}</option>`).join('')}</select>`;
+  const _sel = (t, list, lbl) => `<select data-pick="${t}" aria-label="${lbl}"><option value="">${lbl}…</option>${list.map(x => `<option value="${x}" ${u === t && key === x ? 'selected' : ''}>${t === 'mun' ? esc(MUNN[x]) : lbl + ' ' + x}</option>`).join('')}</select>`;
   const years = CAT.elecciones.filter(x => cargoBase(x.cargo) === cargo);
   let h = `<div class="xp-top"><div><h3 id="mtitle">${kind === 'res' ? 'Resultados por partido / coalición' : 'Evolución del voto'}</h3><small>${esc(name)}${kind === 'res' && a.t ? (n => ` · ${fmt(n)} ${n === 1 ? 'sección' : 'secciones'} · ${fmt(a.t)} votos emitidos`)(secsOfUnit(u, key).length) : ` · ${esc(cargo)}, ${years.map(x => x.anio).filter((v, i, A) => A.indexOf(v) === i).join(', ')}`}</small></div>
     <div class="tabs xp-kind"><button data-k="res" class="${kind === 'res' ? 'on' : ''}">Resultados</button><button data-k="tr" class="${kind === 'tr' ? 'on' : ''}">Evolución</button></div></div>
     <div class="xp-bar"><div class="xp-places"><span class="xp-lbl">Lugar</span><div class="tabs">${placeOpts(MS.u0, MS.k0).map(([pu, pk]) => `<button data-pu="${pu}" data-pk="${pk}" class="${pu === u && pk === key ? 'on' : ''}">${esc(unitName(pu, pk))}</button>`).join('')}</div>
-      ${MS.u0 === 'est' || PERFIL.nivel <= 2 ? sel('mun', CAT.municipios.map(x => x.id), 'Municipio') : ''}${dl.length > 1 || MS.u0 === 'est' ? sel('dl', dl, 'Distrito local') : dl.length ? `<button class="chip" data-pu="dl" data-pk="${dl[0]}">Distrito local ${dl[0]}</button>` : ''}${df.length > 1 || MS.u0 === 'est' ? sel('df', df, 'Distrito federal') : df.length ? `<button class="chip" data-pu="df" data-pk="${df[0]}">Distrito federal ${df[0]}</button>` : ''}</div>
+      ${u !== 'est' && (dl.length || df.length) ? `<span class="xp-lbl">Sus distritos</span><div class="tabs">${dl.map(d => `<button data-pu="dl" data-pk="${d}" class="${u === 'dl' && key === d ? 'on' : ''}">Local ${d}</button>`).join('')}</div><div class="tabs">${df.map(d => `<button data-pu="df" data-pk="${d}" class="${u === 'df' && key === d ? 'on' : ''}">Federal ${d}</button>`).join('')}</div>` : ''}</div>
     <div class="xp-els"><div class="tabs">${CARGOS.map(c => `<button data-cg="${c}" class="${c === cargo ? 'on' : ''}">${CSHORT[c]}</button>`).join('')}</div>
       ${kind === 'res' ? `<div class="tabs">${years.map(x => `<button data-xe="${x.id}" class="${x.id === el ? 'on' : ''}">${x.anio}${x.cargo.includes('extra') ? '*' : ''}</button>`).join('')}</div>` : ''}
       <span class="tabs" id="xp-partes"><button data-p="cand" class="${MS.partes === 'cand' ? 'on' : ''}">Por coalición</button><button data-p="part" class="${MS.partes === 'part' ? 'on' : ''}">Por partido</button></span></div></div>`;
   if (kind === 'res') {
     if (!a.t) h += `<div class="note">No hay resultados de ${esc(m.cargo.toLowerCase())} ${m.anio} en ${esc(name)}.</div>`;
-    else { const p = prevOf(el), ap = p ? agg(u, key, p.id) : null, pa = a.ln ? pct(a.t, a.ln) : null, pp = ap && ap.ln && ap.t ? pct(ap.t, ap.ln) : null, who = w ? personFor(el, u, key, w.c) : null, cl = w ? compLvl(w.margin) : null;
-      h += `<div class="xk">${w ? `<div class="xk-c" style="--c:${candColor(w.c)}"><span>Primer lugar</span><b style="color:${candColor(w.c)}">${esc(candShort(w.c))}</b><small>${who ? esc(who) + ' · ' : ''}${p1(w.share)} · ${fmt(r[0].v)} votos</small></div>` : ''}
-        ${w && r[1] ? `<div class="xk-c" style="--c:#BFB591"><span>Ventaja sobre el 2º lugar</span><b>${w.margin.toFixed(1)} puntos</b><small>${fmt(r[0].v - r[1].v)} votos más que ${esc(candShort(r[1].c))}</small><em class="cmpt ${cl[0]}">${cl[1]}</em></div>` : ''}
+    else { const p = prevOf(el), ap = p ? agg(u, key, p.id) : null, pa = a.ln ? pct(a.t, a.ln) : null, pp = ap && ap.ln && ap.t ? pct(ap.t, ap.ln) : null, t = topB(el, a, u, key), cl = t ? compLvl(t.margin) : null;
+      h += `<div class="xk">${t ? `<div class="xk-c" style="--c:${t.g0.col}"><span>${t.many ? 'Fuerza con más votos' : 'Primer lugar'}</span><b style="color:${t.g0.col}">${esc(t.g0.name)}</b><small>${t.who ? esc(t.who) + ' · ' : ''}${p1(t.share)} · ${fmt(t.g0.v)} votos</small></div>` : ''}
+        ${t && t.g1 ? `<div class="xk-c" style="--c:#BFB591"><span>Ventaja sobre el 2º lugar</span><b>${t.margin.toFixed(1)} puntos</b><small>${fmt(t.g0.v - t.g1.v)} votos más que ${esc(t.g1.name)}</small><em class="cmpt ${cl[0]}">${cl[1]}</em></div>` : ''}
         <div class="xk-c" style="--c:#4A5350"><span>Participación</span><b>${pa != null ? p1(pa) : '—'}</b><small>${pa != null ? 'de la lista nominal' : 'sin lista nominal en el cómputo'}${pa != null && pp != null ? ` · ${sgn(pa - pp)} pts vs ${p.anio}` : ''}</small></div>
         <div class="xk-c" style="--c:#828386"><span>Votos nulos y no registrados</span><b>${p1(pct(a.nu + a.nr, a.t))}</b><small>${fmt(a.nu + a.nr)} votos del total emitido</small></div></div>`;
       const lvls = subLevels(u), lvl = MS.lvl && lvls.some(x => x[0] === MS.lvl) ? MS.lvl : (lvls[0] || [])[0];
       const fine = u === 'est' ? 'mun' : lvls.length ? (lvls.find(x => x[0] === 'sec') || lvls[0])[0] : null, FU = fine ? subUnits(fine, u, key, el) : [];
-      const fl = { sec: ['secciones', 'Secciones'], mun: ['municipios', 'Municipios'], ja: ['juntas auxiliares', 'Juntas auxiliares'], dl: ['distritos locales', 'Distritos locales'], df: ['distritos federales', 'Distritos federales'] }[fine] || ['', ''];
+      const fl = { sec: ['secciones', 'Secciones ganadas'], mun: ['municipios', 'Municipios ganados'], ja: ['juntas auxiliares', 'Juntas auxiliares ganadas'], dl: ['distritos locales', 'Distritos locales ganados'], df: ['distritos federales', 'Distritos federales ganados'] }[fine] || ['', ''];
       let side = '';
-      if (FU.length > 1) { const cc = { alta: 0, media: 0, baja: 0 }, fz = {}; FU.forEach(x => { if (!x.w) return; cc[compLvl(x.w.margin)[0]]++; const k = x.w.tie ? 'Empate' : plusName(x.w.c); fz[k] = fz[k] || { n: 0, c: x.w.tie ? '#9AA3A3' : candColor(x.w.c) }; fz[k].n++; });
+      if (FU.length > 1) { const cc = { alta: 0, media: 0, baja: 0 }, fz = {}; FU.forEach(x => { if (!x.w) return; cc[compLvl(x.w.margin)[0]]++; const k = x.w.tie ? 'Empate' : allyName(el, leadOf(x.w.c)); fz[k] = fz[k] || { n: 0, c: x.w.tie ? '#9AA3A3' : candColor(x.w.c) }; fz[k].n++; });
         const nn = FU.filter(x => x.w).length, pred = Object.entries(cc).sort((x, y) => y[1] - x[1])[0][0], mx = Math.max(...Object.values(fz).map(x => x.n));
         side = `<div class="xs"><div class="xs-b"><h4>Competencia en ${fl[0]}</h4><p>Margen entre 1º y 2º lugar en ${fmt(nn)} ${fl[0]} con resultado. Predomina la competencia <b>${pred}</b>.</p>
           ${[['alta', 'Alta', 'menos de 5 pts', '#7D2447'], ['media', 'Media', 'de 5 a 15 pts', '#BFB591'], ['baja', 'Baja', 'más de 15 pts', '#828386']].map(([k, l, d, c]) => `<div class="xs-r"><span>${l}<small>${d}</small></span><span class="fz-b"><i style="width:${pct(cc[k], nn).toFixed(1)}%;background:${c}"></i></span><b>${fmt(cc[k])}</b><small>${pct(cc[k], nn).toFixed(0)}%</small></div>`).join('')}</div>
-          <div class="xs-b"><h4>${fl[1]} ganadas por fuerza</h4>${Object.entries(fz).sort((x, y) => y[1].n - x[1].n).slice(0, 6).map(([k, v]) => `<div class="xs-r"><span>${esc(k)}</span><span class="fz-b"><i style="width:${(v.n / mx * 100).toFixed(1)}%;background:${v.c}"></i></span><b>${fmt(v.n)}</b><small>${pct(v.n, nn).toFixed(0)}%</small></div>`).join('')}</div></div>`; }
+          <div class="xs-b"><h4>${fl[1]} por fuerza</h4>${Object.entries(fz).sort((x, y) => y[1].n - x[1].n).slice(0, 6).map(([k, v]) => `<div class="xs-r"><span>${esc(k)}</span><span class="fz-b"><i style="width:${(v.n / mx * 100).toFixed(1)}%;background:${v.c}"></i></span><b>${fmt(v.n)}</b><small>${pct(v.n, nn).toFixed(0)}%</small></div>`).join('')}</div></div>`; }
       h += `<div class="xg${side ? '' : ' one'}"><div class="xg-c">${vcols(el, a, u, key, MS.partes, true)}</div>${side}</div>`;
       if (lvls.length) { const rows = subUnits(lvl, u, key, el), srt = MS.sort;
         rows.sort(srt === 'peso' ? (x, y) => y.a.ln - x.a.ln : srt === 'az' ? (x, y) => String(x.name).localeCompare(String(y.name), 'es', { numeric: true }) : (x, y) => (x.w ? x.w.margin : 999) - (y.w ? y.w.margin : 999));
@@ -589,9 +594,9 @@ function renderPanel() {
   h += notes(u, a) + context(u, key);
   const tr = trendLine(u, key, cargo, 'cand', 420, 250, S.el); if (tr) h += card('tr', 'Evolución del voto', trendHead(u, key, cargo, 'cand', S.el) + tr, { sub: `${esc(cargo)} · ${esc(name)}` });
   const dg = datosGen(u, key); if (dg) h += card('dat', 'Datos generales', dg, { sub: `${esc(name)} · corte ${esc(CAT.padron.corte)}`, zoom: false });
-  const st = seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state' });
+  const st = m.tipo === 'SEN' ? null : seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state', zoom: false });
   const ce = m.tipo !== 'DL' ? congEl() : null, sc2 = ce ? seats(ce) : null;
-  if (sc2) h += card('cong', esc(sc2.title), seatsBody(sc2), { sub: 'Todo el estado de Puebla', cls: 'state' });
+  if (sc2) h += card('cong', esc(sc2.title), seatsBody(sc2), { sub: 'Todo el estado de Puebla', cls: 'state', zoom: false });
   if (CAPAS.alcance === 'todo' && EST._afi) h += card('afi', 'Afiliados por partido', afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`, { sub: 'Todo el estado · % de la lista nominal', zoom: false, cls: 'state' });
   h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}. ${esc(CAT.padron.fuente)}.</div>`;
   const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B); linkRows(B); bindTips(B); hideTip();
