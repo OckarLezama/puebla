@@ -175,21 +175,23 @@ function highlight() {
   else if (S.sel && v.k === 'mun' && munOf != null) e = ['==', ['get', 'municipio'], munOf];
   else e = true;
   // alcance a color: solo el foco, la zona metropolitana o todo el estado
-  if (e !== true && v.det && CAPAS.alcance !== 'foco' && !(S.sel && S.sel.u !== 'mun')) e = CAPAS.alcance === 'todo' ? true : ['any', e === false ? false : e, ['in', ['get', 'municipio'], ['literal', CAT.zm]]];
+  if (e !== true && v.det && CAPAS.alcance !== 'foco' && !(S.sel && S.sel.u !== 'mun')) e = CAPAS.alcance === 'todo' ? true : ['any', e === false ? false : e, ['in', ['get', 'municipio'], ['literal', CAPAS.alcance === 'zm' ? CAT.zm : CAT.detalle]]];
   const hov = ['boolean', ['feature-state', 'h'], false];
   const op = e === true ? ['case', hov, 1, VIV] : e === false ? ['case', hov, .4, DIM] : ['case', hov, ['case', e, 1, .45], ['case', e, VIV, DIM]];
   map.setPaintProperty('f-' + v.geo, 'fill-opacity', op);
   map.setPaintProperty('l-' + v.geo, 'line-opacity', e === true ? 1 : e === false ? .3 : ['case', e, 1, .25]);
   if (v.k !== 'mun') map.setPaintProperty('f-municipios', 'fill-opacity', v.det ? .1 : .08);
+  const fm = S.foco.u === 'mun' && !(S.foco.key === 115 && !S.sel) ? S.foco.key : (S.sel && S.sel.u === 'mun' ? S.sel.key : -1);
+  for (const id of ['foco-sh', 'foco-l']) if (map.getLayer(id)) map.setFilter(id, ['==', ['get', 'municipio'], fm]);
   const home = S.foco.u === HOME.u && S.foco.key === HOME.key && !S.sel && S.vista === HOME.vista && CAPAS.alcance === 'foco';
   $('#btn-home').hidden = home; placeHome();
 }
 function paint() {
   AGG = computeAgg(S.vista);
   MUNAGG = S.vista === 'mun' ? AGG : computeAgg('mun');
-  for (const [k, u] of Object.entries(MUNAGG)) map.setFeatureState({ source: 'g-municipios', id: k }, { c: colorFor(u, +k, 'mun') });
+  for (const [k, u] of Object.entries(MUNAGG)) map.setFeatureState({ source: 'g-municipios', id: k }, { c: colorFor(u, +k, 'mun'), wl: ELS[S.el].cand.indexOf(u.w ? u.w.c : '') });
   const v = VK(S.vista);
-  if (S.vista !== 'mun') for (const [k, u] of Object.entries(AGG)) map.setFeatureState({ source: 'g-' + v.geo, id: k }, { c: colorFor(u, S.vista === 'ja' ? k : +k, S.vista) });
+  if (S.vista !== 'mun') for (const [k, u] of Object.entries(AGG)) map.setFeatureState({ source: 'g-' + v.geo, id: k }, { c: colorFor(u, S.vista === 'ja' ? k : +k, S.vista), wl: ELS[S.el].cand.indexOf(u.w ? u.w.c : '') });
   if (v.det) map.setFilter('t-' + v.geo, ['in', ['get', v.id], ['literal', Object.keys(AGG).filter(k => !AGG[k].w).map(k => S.vista === 'ja' ? k : +k)]]);
   highlight(); legend(); hero(); renderPanel();
 }
@@ -223,40 +225,40 @@ function unitName(u, key) {
   if (u === 'df') return 'Distrito federal ' + key;
 }
 function placeHome() { const H = $('#hero'), B = $('#btn-home'); if (!isMobile()) B.style.top = (H.offsetTop + H.offsetHeight + 10) + 'px'; else B.style.top = ''; }
+const chip = (p, sm) => `<span class="pch${sm ? ' sm' : ''}" style="background:${pcol(p)}" title="${esc((PARTY[p] || [0, p])[1])}">${esc(p === 'IND' ? 'IND' : p)}</span>`;
+const chips = c => c.startsWith('CAND_IND') ? chip('IND') : c.split('-').map(p => chip(p)).join('');
+/* resumen sobre el mapa */
 function hero() {
-  const F = S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a);
-  const top = r.slice(0, 4), rest = a.t - top.reduce((s, x) => s + x.v, 0), who = w ? personFor(S.el, F.u, F.key, w.c) : null;
-  $('#hero').innerHTML = `<div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(unitName(F.u, F.key))} · ${esc(cargoBase(m.cargo))} ${m.anio}</div>
-    ${w ? `<div class="hw"><b>${w.tie ? 'Empate' : esc(who || shortCand(w.c))}</b><span class="pc" style="color:${candColor(w.c)}">${p1(w.share)}</span></div>
-    <div class="stack">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}" title="${esc(candLabel(x.c))} ${p1(pct(x.v, a.t))}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
-    <div class="hs"><span>${who ? esc(shortCand(w.c)) : 'Ventaja ' + w.margin.toFixed(1) + ' pts'}</span><span>${a.ln ? 'Participación ' + p1(pct(a.t, a.ln)) : fmt(a.t) + ' votos'}</span></div>`
-    : `<div class="hs"><span>No hubo esta elección en ${m.anio}.</span></div>`}`;
-  placeHome();
+  const F = S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a), v = VK(S.vista);
+  const who = w ? personFor(S.el, F.u, F.key, w.c) : null, top = r.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
+  let won = null, tot = 0;
+  if (v.det && F.u === 'mun') { won = {}; for (const f of GEO[v.geo].features) { const p = f.properties; if ((v.k === 'ja' ? 115 : p.municipio) !== F.key) continue; tot++; const u = AGG[p[v.id]]; if (u && u.w && !u.w.tie) won[u.w.c] = (won[u.w.c] || 0) + 1; } }
+  $('#hero').innerHTML = `<div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(unitName(F.u, F.key))} · ${m.anio}</div><h2>${esc(cargoBase(m.cargo))}<small>${a.t ? (a.ln ? p1(pct(a.t, a.ln)) + ' de participación' : fmt(a.t) + ' votos') : 'Sin elección en ' + m.anio}</small></h2>
+    ${a.t ? `<div class="stack">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
+    ${w && !w.tie ? `<div class="who-won">Ganó <b>${esc(who || shortCand(w.c))}</b>${who ? ` <span>(${esc(shortCand(w.c))})</span>` : ''}</div>` : ''}
+    <div class="rows">${top.map(x => `<div class="r" data-cand="${x.c}"><span class="sw" style="background:${candColor(x.c)}"></span><span class="nm">${esc(shortCand(x.c))}</span><span class="pc">${p1(pct(x.v, a.t))}</span>${won ? `<span class="wn">${won[x.c] || 0} de ${tot}</span>` : ''}</div>`).join('')}</div>` : ''}`;
+  linkRows($('#hero')); placeHome();
 }
 
 /* =================== GRÁFICAS =================== */
-function barRows(eid, a, u, key, mode) {
-  const m = ELS[eid];
-  return mode === 'cand' ? ranking(eid, a).map(x => ({ l: mode === 'cand' && barRows.short ? shortCand(x.c) : candLabel(x.c), s: personFor(eid, u, key, x.c), t: candLabel(x.c) + ' · ' + candTitle(x.c), col: candColor(x.c), v: x.v }))
-    : m.part.map((p, i) => ({ l: p, t: (PARTY[p] || [0, p])[1], col: pcol(p), v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v);
+function stackBar(eid, a, big) {
+  const r = ranking(eid, a), rest = a.t - r.reduce((s, x) => s + x.v, 0);
+  return `<div class="stk${big ? ' big' : ''}">${r.map(x => { const p = pct(x.v, a.t); return `<i data-cand="${x.c}" style="--w:${p}%;background:${candColor(x.c)}" title="${esc(shortCand(x.c))} ${p1(p)}">${p > 9 ? `<b>${p.toFixed(0)}%</b>` : ''}</i>`; }).join('')}<i style="--w:${pct(rest, a.t)}%;background:var(--nores)"></i></div>`;
 }
-function bars(eid, a, u, key, mode, opts = {}) {
-  barRows.short = !!opts.short; const rows = barRows(eid, a, u, key, mode); barRows.short = false;
-  if (opts.hideWin && rows[0]) rows[0].s = null;
-  if (!opts.noNulos) { rows.push({ l: 'Votos nulos', col: cssVar('--muted'), v: a.nu, minor: true }); if (a.nr) rows.push({ l: 'No registradas', col: cssVar('--muted'), v: a.nr, minor: true }); }
-  const max = Math.max(...rows.map(r => r.v), 1);
-  return `<div class="bars">${rows.map(r => `<div class="b${r.minor ? ' minor' : ''}" title="${esc(r.t || '')}"><span class="n">${esc(r.l)}${r.s ? `<small>${esc(r.s)}</small>` : ''}</span><span class="vv">${fmt(r.v)}</span><span class="pp">${p1(pct(r.v, a.t))}</span><span class="track"><i data-w="${(r.v / max * 100).toFixed(1)}" style="background:${r.col}"></i></span></div>`).join('')}</div>`;
+/* una fila por candidatura: logos de los partidos que la forman, candidato, porcentaje y barra */
+function resultsBlock(eid, a, u, key, big) {
+  const r = ranking(eid, a), max = r.length ? r[0].v : 1, w = verdict(eid, a);
+  return `${stackBar(eid, a, big)}<div class="rlist">${r.map((x, i) => { const who = personFor(eid, u, key, x.c);
+    return `<div class="rr${i === 0 ? ' first' : ''}" data-cand="${x.c}" title="Toca para ver en el mapa dónde gana">
+      <div class="rr-h"><span class="chips">${chips(x.c)}</span><span class="rr-p" style="color:${i === 0 ? candColor(x.c) : 'inherit'}">${p1(pct(x.v, a.t))}</span></div>
+      ${who ? `<div class="rr-n">${esc(who)}</div>` : ''}
+      <div class="rr-b"><i data-w="${(x.v / max * 100).toFixed(1)}" style="background:${candColor(x.c)}"></i></div><div class="rr-v">${fmt(x.v)} votos</div></div>`; }).join('')}</div>
+    <div class="src">Nulos ${p1(pct(a.nu, a.t))}${a.nr ? ` · No registradas ${p1(pct(a.nr, a.t))}` : ''}${w && !w.tie ? ` · Ventaja del primer lugar: ${w.margin.toFixed(1)} puntos` : ''}</div>`;
 }
-/* columnas por partido (votos con su logo) */
-function columns(eid, a, W = 380, H = 190) {
-  const m = ELS[eid], rows = m.part.map((p, i) => ({ p, v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v).slice(0, 10);
-  if (!rows.length) return '';
-  const max = Math.max(...rows.map(r => r.v)), L = 6, B = 34, T = 22, bw = (W - L * 2) / rows.length;
-  let g = `<line class="ax" x1="0" x2="${W}" y1="${H - B}" y2="${H - B}"/>`;
-  rows.forEach((r, i) => { const h = (H - B - T) * r.v / max, x = L + i * bw + bw * .14, w = bw * .72, y = H - B - h;
-    g += `<rect class="col" style="animation-delay:${i * .05}s" x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${pcol(r.p)}"><title>${esc((PARTY[r.p] || [0, r.p])[1])}: ${fmt(r.v)}</title></rect>`
-      + `<text class="lbl-v" x="${x + w / 2}" y="${y - 6}" text-anchor="middle">${pct(r.v, a.t).toFixed(1)}</text><text x="${x + w / 2}" y="${H - B + 15}" text-anchor="middle">${esc(r.p)}</text>`; });
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Votos por partido">${g}</svg></div>`;
+function partyBars(eid, a) {
+  const m = ELS[eid], rows = m.part.map((p, i) => ({ p, v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v), max = rows.length ? rows[0].v : 1;
+  return `<div class="plist">${rows.map(x => `<div class="pr">${chip(x.p)}<div class="rr-b"><i data-w="${(x.v / max * 100).toFixed(1)}" style="background:${pcol(x.p)}"></i></div><span class="pp">${p1(pct(x.v, a.t))}</span></div>`).join('')}</div>
+    <div class="src">Votos marcados solo con el logo de cada partido. Los votos que marcaron varios logos de una coalición cuentan para la candidatura, no para un partido.</div>`;
 }
 function trendData(u, key) {
   const cargo = cargoBase(ELS[S.el].cargo);
@@ -275,95 +277,93 @@ function trend(u, key, W = 380, H = 190) {
   const sel = pts.findIndex(p => p.e.id === S.el); if (sel >= 0) g += `<line x1="${xs(sel)}" x2="${xs(sel)}" y1="${T}" y2="${H - B}" stroke="${cssVar('--oro')}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
   const part = pts.map(p => p.part);
   if (part.every(v => v != null)) g += `<path d="${path(part)}" fill="none" stroke="${cssVar('--muted')}" stroke-width="2" stroke-dasharray="4 4"/>`;
-  lead.forEach((p, j) => { const vals = pts.map(x => x.by[p] || 0), d = path(vals), c = pcol(p);
-    const gid = 'gr' + p + W; g += `<defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity="${j === 0 ? .28 : .12}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><path class="ar" d="${d} L${xs(vals.length - 1)},${ys(0)} L${xs(0)},${ys(0)} Z" fill="url(#${gid})"/>`;
-    g += `<text x="${xs(vals.length - 1) + 6}" y="${ys(vals[vals.length - 1]) + 4}" class="lbl-v" style="fill:${c}">${vals[vals.length - 1].toFixed(0)}</text>`;
-    g += `<path class="ln" style="animation-delay:${j * .15}s" d="${d}" fill="none" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>` + vals.map((v, i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="${i === sel ? 4.5 : 3}" fill="${c}"><title>${pts[i].e.anio} · ${p}: ${p1(v)}</title></circle>`).join(''); });
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tendencia">${g}</svg></div><div class="lgd">${lead.map(p => `<span><i style="background:${pcol(p)}"></i>${p}${pts.some(x => ranking(x.e.id, x.a).some(r => leadOf(r.c) === p && r.c.includes('-'))) ? ' y aliados' : ''}</span>`).join('')}${part.every(v => v != null) ? `<span><i style="background:${cssVar('--muted')}"></i>Participación</span>` : ''}</div>`;
+  lead.forEach((p, j) => { const vals = pts.map(x => x.by[p] || 0), d = path(vals), c = pcol(p), gid = 'gr' + p + W;
+    g += `<defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity="${j === 0 ? .28 : .12}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><path class="ar" d="${d} L${xs(vals.length - 1)},${ys(0)} L${xs(0)},${ys(0)} Z" fill="url(#${gid})"/>`;
+    g += `<path class="ln" style="animation-delay:${j * .15}s" d="${d}" fill="none" stroke="${c}" stroke-width="2.8" stroke-linecap="round"/>` + vals.map((v, i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="${i === sel ? 5 : 3.2}" fill="${c}" stroke="#fff" stroke-width="1.5"><title>${pts[i].e.anio} · ${p}: ${p1(v)}</title></circle>`).join('')
+      + `<text x="${xs(vals.length - 1) + 7}" y="${ys(vals[vals.length - 1]) + 4}" class="lbl-v" style="fill:${c}">${vals[vals.length - 1].toFixed(0)}</text>`; });
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tendencia">${g}</svg></div><div class="lgd">${lead.map(p => `<span>${chip(p, 1)}${pts.some(x => ranking(x.e.id, x.a).some(r => leadOf(r.c) === p && r.c.includes('-'))) ? ' y aliados' : ''}</span>`).join('')}${part.every(v => v != null) ? `<span><i style="background:${cssVar('--muted')}"></i>Participación</span>` : ''}</div>`;
 }
-/* ¿qué cambió? gráfica de pendiente entre dos elecciones, con una frase que lo resume */
-function compare(u, key, W = 380, H = 230) {
-  const c = cmpEl(); if (!c) return null;
-  const e1 = ELS[S.el], a1 = agg(u, key, S.el), a0 = agg(u, key, c.id);
-  if (!a1.t || !a0.t) return { c, html: `<div class="note">No hay resultados aquí en ${c.anio}.</div>` };
-  const b1 = blocs(S.el, a1), b0 = blocs(c.id, a0);
-  const parts = [...new Set([...Object.keys(b1), ...Object.keys(b0)])].filter(p => p !== 'IND').sort((x, y) => Math.max(b1[y] || 0, b0[y] || 0) - Math.max(b1[x] || 0, b0[x] || 0)).slice(0, 5);
-  const allR = ranking(S.el, a1).concat(ranking(c.id, a0)), nm = p => p + (allR.some(r => leadOf(r.c) === p && r.c.includes('-')) ? ' y aliados' : '');
-  const w1 = verdict(S.el, a1), w0 = verdict(c.id, a0);
-  const big = parts.map(p => ({ p, d: (b1[p] || 0) - (b0[p] || 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d))[0];
-  const frase = !w1 || !w0 ? '' : leadOf(w1.c) === leadOf(w0.c)
-    ? `<b>${esc(nm(leadOf(w1.c)))}</b> volvió a ganar. ${big ? `El mayor cambio fue de <b>${esc(nm(big.p))}</b>: ${big.d > 0 ? 'subió' : 'bajó'} ${Math.abs(big.d).toFixed(1)} puntos.` : ''}`
-    : `<b>Cambió el ganador</b>: en ${c.anio} ganó ${esc(nm(leadOf(w0.c)))} y en ${e1.anio} ${esc(nm(leadOf(w1.c)))}.`;
-  const max = Math.max(60, ...parts.map(p => Math.max(b1[p] || 0, b0[p] || 0))) * 1.08;
-  const L = 50, R = 96, T = 26, B = 18, x0 = L, x1 = W - R, y = v => T + (1 - v / max) * (H - T - B);
-  let g = `<text x="${x0}" y="14" text-anchor="middle" class="lbl-v">${c.anio}</text><text x="${x1}" y="14" text-anchor="middle" class="lbl-v">${e1.anio}</text><line class="ax" x1="${x0}" x2="${x0}" y1="${T - 4}" y2="${H - B}"/><line class="ax" x1="${x1}" x2="${x1}" y1="${T - 4}" y2="${H - B}"/>`;
-  const spread = vals => { const o = vals.map((v, i) => ({ i, y: y(v) })).sort((a, b) => a.y - b.y); for (let k = 1; k < o.length; k++) if (o[k].y - o[k - 1].y < 15) o[k].y = o[k - 1].y + 15; const r = []; o.forEach(x => r[x.i] = x.y); return r; };
-  const Y0 = spread(parts.map(p => b0[p] || 0)), Y1 = spread(parts.map(p => b1[p] || 0));
-  parts.forEach((p, i) => { const v0 = b0[p] || 0, v1 = b1[p] || 0, col = pcol(p), d = v1 - v0;
-    g += `<line class="sl" style="animation-delay:${i * .08}s" x1="${x0}" y1="${y(v0)}" x2="${x1}" y2="${y(v1)}" stroke="${col}" stroke-width="3" stroke-linecap="round"/>`
-      + `<circle cx="${x0}" cy="${y(v0)}" r="5.5" fill="#fff" stroke="${col}" stroke-width="3"/><circle cx="${x1}" cy="${y(v1)}" r="6.5" fill="${col}"/>`
-      + `<text x="${x0 - 10}" y="${Y0[i] + 4}" text-anchor="end">${v0.toFixed(1)}</text><text x="${x1 + 10}" y="${Y1[i] + 4}"><tspan class="lbl-v">${v1.toFixed(1)}</tspan><tspan dx="5" style="fill:${d >= 0 ? '#2E7D4F' : '#B03A2E'};font-weight:700">${d > 0 ? '+' : ''}${d.toFixed(1)}</tspan></text>`; });
-  const pa1 = a1.ln ? pct(a1.t, a1.ln) : null, pa0 = a0.ln ? pct(a0.t, a0.ln) : null;
-  const html = `<p class="frase">${frase}</p><div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Comparación">${g}</svg></div>
-    <div class="lgd">${parts.map(p => `<span><i style="background:${pcol(p)}"></i>${esc(nm(p))}</span>`).join('')}</div>
-    ${pa1 != null && pa0 != null ? `<div class="src">Participación: ${p1(pa0)} en ${c.anio} y ${p1(pa1)} en ${e1.anio} (${pa1 - pa0 > 0 ? '+' : ''}${(pa1 - pa0).toFixed(1)} puntos). Porcentaje de votos de cada partido y sus aliados.</div>` : ''}`;
-  return { c, html };
+
+/* =================== COMPARAR =================== */
+const CMP = { a: null, b: null };
+function cmpView(u, key, ea, eb, big) {
+  const A = ELS[ea], B = ELS[eb], aa = agg(u, key, ea), ab = agg(u, key, eb);
+  if (!aa.t || !ab.t) return `<div class="note">No hay resultados aquí en ${!aa.t ? A.anio + ' (' + cargoBase(A.cargo) + ')' : B.anio + ' (' + cargoBase(B.cargo) + ')'}.</div>`;
+  const ba = blocs(ea, aa), bb = blocs(eb, ab), wa = verdict(ea, aa), wb = verdict(eb, ab);
+  const parts = [...new Set([...Object.keys(ba), ...Object.keys(bb)])].filter(p => p !== 'IND').sort((x, y) => Math.max(bb[y] || 0, ba[y] || 0) - Math.max(bb[x] || 0, ba[x] || 0)).slice(0, 6);
+  const allies = p => ranking(ea, aa).concat(ranking(eb, ab)).some(r => leadOf(r.c) === p && r.c.includes('-')), nm = p => p + (allies(p) ? ' y aliados' : '');
+  const max = Math.max(...parts.map(p => Math.max(ba[p] || 0, bb[p] || 0)), 1);
+  const col = (E, a, w) => `<div class="cv-h"><div class="cv-y">${E.anio}</div><div class="cv-c">${esc(cargoBase(E.cargo))}</div>${w ? `<div class="cv-w"><span class="sw" style="background:${candColor(w.c)}"></span>Ganó ${esc(shortCand(w.c))} · ${p1(w.share)}</div>` : ''}<div class="cv-c">${a.ln ? 'Participación ' + p1(pct(a.t, a.ln)) : fmt(a.t) + ' votos'}</div></div>`;
+  const frase = wa && wb ? (leadOf(wa.c) === leadOf(wb.c) ? `<b>${esc(nm(leadOf(wb.c)))}</b> ganó en las dos.` : `<b>Cambió el ganador</b>: de ${esc(nm(leadOf(wa.c)))} a ${esc(nm(leadOf(wb.c)))}.`) : '';
+  const rows = parts.map(p => { const x = ba[p] || 0, y = bb[p] || 0, d = y - x;
+    return `<div class="bf-r"><div class="bf-l"><span class="bf-v">${p1(x)}</span><i data-w="${(x / max * 100).toFixed(1)}" style="background:${pcol(p)}"></i></div>
+      <div class="bf-m">${chip(p)}<small>${allies(p) ? 'y aliados' : ''}</small></div>
+      <div class="bf-rt"><i data-w="${(y / max * 100).toFixed(1)}" style="background:${pcol(p)}"></i><span class="bf-v">${p1(y)}</span></div>
+      <span class="d ${Math.abs(d) < .5 ? 'eq' : d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d.toFixed(1)}</span></div>`; }).join('');
+  const pa = aa.ln ? pct(aa.t, aa.ln) : null, pb = ab.ln ? pct(ab.t, ab.ln) : null;
+  return `<div class="cv${big ? ' big' : ''}"><div class="cv-top">${col(A, aa, wa)}<div class="cv-vs">vs</div>${col(B, ab, wb)}</div>
+    ${frase ? `<p class="frase">${frase}</p>` : ''}
+    <div class="bf">${rows}${pa != null && pb != null ? `<div class="bf-r part"><div class="bf-l"><span class="bf-v">${p1(pa)}</span><i data-w="${pa.toFixed(1)}" style="background:var(--gris)"></i></div><div class="bf-m"><b>Participación</b></div><div class="bf-rt"><i data-w="${pb.toFixed(1)}" style="background:var(--gris)"></i><span class="bf-v">${p1(pb)}</span></div><span class="d ${Math.abs(pb - pa) < .5 ? 'eq' : pb > pa ? 'up' : 'dn'}">${pb > pa ? '▲ +' : pb < pa ? '▼ ' : ''}${(pb - pa).toFixed(1)}</span></div>` : ''}</div>
+    <div class="src">Porcentaje de votos de cada partido junto con sus aliados en cada elección. La última columna es la diferencia en puntos.</div></div>`;
 }
-/* anillo de resultados con el ganador al centro */
-function donut(eid, a, u, key, size = 190) {
-  const r = ranking(eid, a), top = r.slice(0, 5), rest = a.t - top.reduce((s, x) => s + x.v, 0), w = verdict(eid, a);
-  const R = size / 2 - 12, C = 2 * Math.PI * R, segs = top.map(x => ({ v: x.v, col: candColor(x.c), t: candLabel(x.c) })).concat(rest > 0 ? [{ v: rest, col: cssVar('--nores'), t: 'Otros y nulos' }] : []);
-  let off = 0, g = `<circle cx="${size / 2}" cy="${size / 2}" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="22"/>`;
-  segs.forEach((s, i) => { const len = C * s.v / a.t; g += `<circle class="seg-d" style="--len:${len.toFixed(2)};--C:${C.toFixed(2)};animation-delay:${i * .08}s" cx="${size / 2}" cy="${size / 2}" r="${R}" fill="none" stroke="${s.col}" stroke-width="22" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"><title>${esc(s.t)}: ${p1(pct(s.v, a.t))}</title></circle>`; off += len; });
-  if (w) g += `<text x="${size / 2}" y="${size / 2 - 2}" text-anchor="middle" class="d-big" style="fill:${candColor(w.c)}">${w.share.toFixed(1)}%</text><text x="${size / 2}" y="${size / 2 + 18}" text-anchor="middle" class="d-sm">${esc(shortCand(w.c))}</text>`;
-  return `<div class="donut"><svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Reparto de votos">${g}</svg></div>`;
+function openCompare() {
+  const { u, key } = current();
+  CMP.b = S.el; CMP.a = (cmpEl() || ELS[S.el]).id;
+  const pick = side => { const e = ELS[CMP[side]], cargo = cargoBase(e.cargo);
+    return `<div class="cp-side"><div class="cp-lbl">${side === 'a' ? 'Elección A' : 'Elección B'}</div><select class="cmp-sel" data-side="${side}" aria-label="Cargo ${side.toUpperCase()}">${CARGOS.map(c => `<option ${c === cargo ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <div class="tabs">${CAT.elecciones.filter(x => cargoBase(x.cargo) === cargo).map(x => `<button data-side="${side}" data-e="${x.id}" class="${x.id === e.id ? 'on' : ''}">${x.anio}${x.cargo.includes('extra') ? '*' : ''}</button>`).join('')}</div></div>`; };
+  const draw = () => { $('#cmp-body').innerHTML = `<div class="cp-pick">${pick('a')}${pick('b')}</div>${cmpView(u, key, CMP.a, CMP.b, true)}`; animate($('#cmp-body'));
+    $$('#cmp-body select[data-side]').forEach(s => s.onchange = () => { const es = CAT.elecciones.filter(x => cargoBase(x.cargo) === s.value).sort((a, b) => b.anio - a.anio); CMP[s.dataset.side] = es[0].id; draw(); });
+    $$('#cmp-body button[data-side]').forEach(bt => bt.onclick = () => { CMP[bt.dataset.side] = bt.dataset.e; draw(); }); };
+  openModal(`<h3 id="mtitle">Comparar elecciones</h3><p class="msub">${esc(unitName(u, key))} · elige qué elecciones comparar</p><div id="cmp-body"></div>`);
+  draw();
 }
-/* composición: escaños del Congreso, distritos o ayuntamientos ganados en todo el estado */
-function blocOfSeat(eid, partido, actor) {
-  const m = ELS[eid], ps = (partido || '').split(/[_-]/).filter(Boolean), as = (actor || '').replace(/^C_COMUN_|^COM_MEXICO$/, x => x === 'COM_MEXICO' ? 'PRI_PVEM' : '').split(/[_-]/).filter(Boolean);
-  const pool = ps.length ? ps : as, cand = m.cand.find(c => !c.startsWith('CAND_IND') && pool.some(p => c.split('-').includes(p)));
-  return cand ? leadOf(cand) : (pool[0] || '?');
+
+/* =================== COMPOSICIÓN: CONGRESO Y AYUNTAMIENTOS =================== */
+function blocOf(eid, party) { const c = ELS[eid].cand.find(x => !x.startsWith('CAND_IND') && x.split('-').includes(party)); return c ? leadOf(c) : party; }
+function seatParty(eid, partido, actor) {
+  const ps = (partido || '').split(/[_-]/).filter(Boolean); if (ps.length === 1) return ps[0];
+  const as = (actor === 'COM_MEXICO' ? 'PRI_PVEM' : (actor || '').replace(/^C_COMUN_/, '')).split(/[_-]/).filter(Boolean);
+  return blocOf(eid, (ps[0] || as[0] || '?'));
 }
 function seats() {
   const m = ELS[S.el], t = m.tipo, CG = EST._cong || {};
-  let list = [], title = '', total = 0, note = '';
-  if (t === 'DL' && CG.DL && CG.DL[m.anio]) { const d = CG.DL[m.anio]; list = (d.mr || []).map(s => ({ b: blocOfSeat(S.el, s[0], s[1]), k: 'mr' })).concat((d.rp || []).map(s => ({ b: blocOfSeat(S.el, s[0], s[1]), k: 'rp' }))); title = `Congreso del Estado · ${list.length} diputaciones`; note = `${(d.mr || []).length} de mayoría y ${(d.rp || []).length} plurinominales`; }
-  else if (t === 'DF' && CG.DF && CG.DF[m.anio]) { list = CG.DF[m.anio].mr.map(s => ({ b: blocOfSeat(S.el, s[0], s[1]), k: 'mr' })); title = `Diputaciones federales de Puebla · ${list.length} distritos`; note = 'Solo los distritos de mayoría de Puebla'; }
-  else if (t === 'SEN' && CG.SEN && CG.SEN[m.anio]) { list = CG.SEN[m.anio].mr.map(s => ({ b: blocOfSeat(S.el, s[0], s[1]), k: 'mr' })); title = `Senado por Puebla · ${list.length} escaños`; note = 'Dos de mayoría y uno de primera minoría'; }
-  else if (t === 'AYU') { for (const [k, pk] of Object.entries(EST[S.el].mun)) { const o = EMPTY(); addPack(o, pk); const w = verdict(S.el, o); if (w && !w.tie) list.push({ b: leadOf(w.c), k: 'mr', m: +k }); } title = `Ayuntamientos · ${list.length} municipios`; note = 'Partido o coalición que ganó cada presidencia municipal'; }
+  let list = [], title = '', sub = '';
+  const mk = (arr, k) => (arr || []).map(s => { const p = seatParty(S.el, s[0], s[1]); return { p, b: blocOf(S.el, p), k }; });
+  if (t === 'DL' && CG.DL && CG.DL[m.anio]) { const d = CG.DL[m.anio]; list = mk(d.mr, 'mr').concat(mk(d.rp, 'rp')); title = `Congreso del Estado · ${m.anio}`; sub = `${list.length} diputaciones: ${(d.mr || []).length} de mayoría y ${(d.rp || []).length} plurinominales`; }
+  else if (t === 'DF' && CG.DF && CG.DF[m.anio]) { list = mk(CG.DF[m.anio].mr, 'mr'); title = `Diputaciones federales de Puebla · ${m.anio}`; sub = `Los ${list.length} distritos de mayoría del estado`; }
+  else if (t === 'SEN' && CG.SEN && CG.SEN[m.anio]) { list = mk(CG.SEN[m.anio].mr, 'mr'); title = `Senado por Puebla · ${m.anio}`; sub = 'Dos escaños de mayoría y uno de primera minoría'; }
+  else if (t === 'AYU') { for (const [k, pk] of Object.entries(EST[S.el].mun)) { const o = EMPTY(); addPack(o, pk); const w = verdict(S.el, o); if (w && !w.tie) list.push({ p: leadOf(w.c), b: leadOf(w.c), k: 'mr', m: +k }); } title = `Ayuntamientos del estado · ${m.anio}`; sub = `${list.length} presidencias municipales`; }
   if (!list.length) return null;
-  total = list.length;
-  const cnt = {}; list.forEach(s => cnt[s.b] = (cnt[s.b] || 0) + 1);
-  const order = Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(x => x[0]);
-  list.sort((x, y) => order.indexOf(x.b) - order.indexOf(y.b));
-  const may = Math.floor(total / 2) + 1, cal = Math.ceil(total * 2 / 3), lead = order[0], nl = cnt[lead];
-  const quien = p => p + (m.cand.some(c => leadOf(c) === p && c.includes('-')) ? ' y aliados' : '');
-  const veredicto = t === 'AYU' ? `<b>${esc(quien(lead))}</b> ganó ${nl} de ${total} municipios.`
-    : nl >= cal ? `<b>${esc(quien(lead))}</b> tiene ${nl} de ${total}: <b>mayoría calificada</b> (dos tercios).` : nl >= may ? `<b>${esc(quien(lead))}</b> tiene ${nl} de ${total}: <b>mayoría</b>.` : `Nadie tiene mayoría: ${esc(quien(lead))} tiene ${nl} de ${total} y se necesitan ${may}.`;
-  return { title, total, list, cnt, order, may, veredicto, note, t };
+  const bl = {}; list.forEach(s => { bl[s.b] = bl[s.b] || { n: 0, parts: {} }; bl[s.b].n++; bl[s.b].parts[s.p] = (bl[s.b].parts[s.p] || 0) + 1; });
+  const order = Object.entries(bl).sort((a, b) => b[1].n - a[1].n).map(x => x[0]);
+  list.sort((x, y) => order.indexOf(x.b) - order.indexOf(y.b) || (bl[y.b].parts[y.p] - bl[x.b].parts[x.p]) || x.p.localeCompare(y.p));
+  const total = list.length, may = Math.floor(total / 2) + 1, cal = Math.ceil(total * 2 / 3), lead = order[0], nl = bl[lead].n;
+  const nm = p => p + (m.cand.some(c => leadOf(c) === p && c.includes('-')) ? ' y aliados' : '');
+  const ver = t === 'AYU' ? `<b>${esc(nm(lead))}</b> ganó <b>${nl}</b> de ${total} municipios.` : t === 'SEN' ? `<b>${esc(nm(lead))}</b> obtuvo ${nl} de ${total} escaños.`
+    : nl >= cal ? `<b>${esc(nm(lead))}</b> tiene <b>${nl}</b> de ${total}: <b>mayoría calificada</b>.` : nl >= may ? `<b>${esc(nm(lead))}</b> tiene <b>${nl}</b> de ${total}: <b>mayoría</b>.` : `Nadie tiene mayoría. ${esc(nm(lead))} tiene ${nl} y se necesitan ${may}.`;
+  return { title, sub, total, list, bl, order, may, cal, ver, t, nm };
 }
-function seatsChart(S_, W = 380) {
-  if (S_.t === 'AYU') {   // cuadrícula de municipios
-    const cols = 22, sz = (W - 4) / cols, H = Math.ceil(S_.total / cols) * sz;
-    const g = S_.list.map((s, i) => `<rect class="wf" style="animation-delay:${(i * 3) % 400}ms" data-mun="${s.m}" x="${(i % cols) * sz + 1}" y="${Math.floor(i / cols) * sz + 1}" width="${sz - 2.5}" height="${sz - 2.5}" rx="2.5" fill="${pcol(s.b)}"><title>${esc(MUNN[s.m])}: ${esc(s.b)}</title></rect>`).join('');
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Municipios ganados">${g}</svg></div>`;
-  }
-  // hemiciclo
-  const n = S_.total, rows = n > 30 ? 4 : n > 12 ? 3 : n > 5 ? 2 : 1, H = W / 2 + 10, cx = W / 2, cy = H - 6, r0 = W * .2, r1 = W / 2 - 14;
-  const radii = Array.from({ length: rows }, (_, i) => rows === 1 ? (r0 + r1) / 2 : r0 + (r1 - r0) * i / (rows - 1));
-  const tot = radii.reduce((s, r) => s + r, 0), per = radii.map(r => Math.round(n * r / tot)); per[per.length - 1] += n - per.reduce((s, x) => s + x, 0);
-  const pts = []; radii.forEach((r, i) => { const k = per[i]; for (let j = 0; j < k; j++) { const a = Math.PI * (k === 1 ? .5 : j / (k - 1)); pts.push({ a, x: cx - r * Math.cos(a), y: cy - r * Math.sin(a) }); } });
-  pts.sort((p, q) => p.a - q.a);
-  const rad = Math.min(14, (r1 - r0) / (rows * 1.6) + 4, W / (n * .9 + 8));
-  let g = pts.map((p, i) => { const s = S_.list[i]; return `<circle class="seat" style="animation-delay:${i * 18}ms" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${pcol(s.b)}" ${s.k === 'rp' ? `stroke="#fff" stroke-width="2"` : ''}><title>${esc(s.b)}${s.k === 'rp' ? ' · plurinominal' : ''}</title></circle>`; }).join('');
-  g += `<text x="${cx}" y="${cy - 8}" text-anchor="middle" class="d-big">${S_.cnt[S_.order[0]]}</text><text x="${cx}" y="${cy + 4}" text-anchor="middle" class="d-sm">de ${n} · mayoría ${S_.may}</text>`;
+function hemicycle(s, W) {
+  if (s.t === 'AYU') { const cols = 24, gap = 2, sz = (W - gap * (cols - 1)) / cols, H = Math.ceil(s.total / cols) * (sz + gap);
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Municipios">${s.list.map((x, i) => `<rect class="wf" style="animation-delay:${(i * 4) % 500}ms" data-mun="${x.m}" x="${(i % cols) * (sz + gap)}" y="${Math.floor(i / cols) * (sz + gap)}" width="${sz}" height="${sz}" rx="${sz * .22}" fill="${pcol(x.p)}"><title>${esc(MUNN[x.m])} · ${esc(s.nm(x.b))}</title></rect>`).join('')}</svg></div>`; }
+  const n = s.total, rows = n > 36 ? 4 : n > 16 ? 3 : n > 6 ? 2 : 1, H = W * .54, cx = W / 2, cy = H - 6, R1 = W / 2 - 12, R0 = R1 * (rows > 1 ? .5 : .72);
+  const radii = Array.from({ length: rows }, (_, i) => rows === 1 ? R0 : R0 + (R1 - R0) * i / (rows - 1));
+  const tot = radii.reduce((a, r) => a + r, 0), per = radii.map(r => Math.max(1, Math.round(n * r / tot))); per[rows - 1] += n - per.reduce((a, x) => a + x, 0);
+  const pts = []; radii.forEach((r, i) => { const k = per[i]; for (let j = 0; j < k; j++) { const a = Math.PI * (1 - (k === 1 ? .5 : j / (k - 1))); pts.push({ a, x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) }); } });
+  pts.sort((p, q) => q.a - p.a);
+  const rad = Math.min((R1 - R0) / Math.max(rows - 1, 1) * .42, Math.PI * R1 / per[rows - 1] * .42, 16);
+  let g = pts.map((p, i) => { const x = s.list[i]; return `<g class="seat" style="animation-delay:${i * 22}ms"><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${pcol(x.p)}"><title>${esc(x.p)}${x.k === 'rp' ? ' · plurinominal' : ' · mayoría'}</title></circle>${x.k === 'rp' ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(rad * .38).toFixed(1)}" fill="#fff" opacity=".9" pointer-events="none"/>` : ''}</g>`; }).join('');
+  const fs = Math.max(22, W * .075);
+  g += `<text x="${cx}" y="${cy - R0 * .38}" text-anchor="middle" class="h-big" style="fill:${pcol(s.order[0])};font-size:${fs}px">${s.bl[s.order[0]].n}</text><text x="${cx}" y="${cy - R0 * .38 + fs * .55}" text-anchor="middle" class="h-sm" style="font-size:${Math.max(11, fs * .32)}px">de ${n} · mayoría ${s.may}</text>`;
   return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Composición">${g}</svg></div>`;
 }
-function seatsCard(big) {
-  const s = seats(); if (!s) return '';
-  const body = `<p class="frase">${s.veredicto}</p>${seatsChart(s, big ? 720 : 380)}<div class="lgd">${s.order.map(p => `<span><i style="background:${pcol(p)}"></i>${esc(p)} ${s.cnt[p]}</span>`).join('')}</div><div class="src">${esc(s.note)}${s.t === 'DL' ? '. Los plurinominales llevan borde blanco' : ''}.</div>`;
-  return big ? `<h4 class="src">${esc(s.title)}</h4>${body}` : card('seats', `En todo el estado · ${esc(s.title)}`, body);
+function seatsBody(s, W) {
+  return `<p class="frase">${s.ver}</p>${hemicycle(s, W)}
+    <div class="blocs">${s.order.map(b => `<div class="bl"><div class="bl-h">${chip(b)}<span>${esc(s.nm(b).replace(b, '').trim() || '')}</span><b>${s.bl[b].n}</b></div>${Object.keys(s.bl[b].parts).length > 1 ? `<div class="bl-p">${Object.entries(s.bl[b].parts).sort((x, y) => y[1] - x[1]).map(([p, k]) => `${chip(p, 1)} ${k}`).join(' ')}</div>` : ''}</div>`).join('')}</div>
+    <div class="src">${esc(s.sub)}${s.t === 'DL' ? '. Los plurinominales llevan un punto blanco' : ''}. Fuente: registro de candidaturas ganadoras INE / IEE Puebla.</div>`;
 }
+
 function pyramid(P) {
   if (!P) return '';
   const G = CAT.padron.grupos, mx = Math.max(...P[5], ...P[6], 1);
@@ -372,29 +372,42 @@ function pyramid(P) {
 }
 function afiliados() {
   const A = EST._afi; if (!A) return '';
-  const rows = Object.entries(A).map(([p, d]) => ({ p, v: d.t })).sort((a, b) => b.v - a.v), max = rows[0].v, tot = rows.reduce((s, r) => s + r.v, 0);
-  return `<div class="bars">${rows.map(r => `<div class="b"><span class="n">${esc(r.p)}</span><span class="vv">${fmt(r.v)}</span><span class="pp">${p1(pct(r.v, tot))}</span><span class="track"><i data-w="${(r.v / max * 100).toFixed(1)}" style="background:${pcol(r.p)}"></i></span></div>`).join('')}</div>`;
+  const rows = Object.entries(A).map(([p, d]) => ({ p, v: d.t })).sort((a, b) => b.v - a.v), max = rows[0].v;
+  return `<div class="plist">${rows.map(x => `<div class="pr">${chip(x.p)}<div class="rr-b"><i data-w="${(x.v / max * 100).toFixed(1)}" style="background:${pcol(x.p)}"></i></div><span class="pp">${fmt(x.v)}</span></div>`).join('')}</div>`;
 }
 function animate(root) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     root.querySelectorAll('[data-w]').forEach(el => el.style.width = el.dataset.w + '%');
+    root.querySelectorAll('.stk i').forEach(el => el.style.width = el.style.getPropertyValue('--w'));
     root.querySelectorAll('[data-n]').forEach(el => { const to = +el.dataset.n, dec = +(el.dataset.d || 0), suf = el.dataset.s || '', t0 = performance.now();
       const step = t => { const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3), v = to * e; el.textContent = (dec ? v.toFixed(dec) : fmt(v)) + suf; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
   }));
+}
+/* pasar el cursor por una candidatura resalta en el mapa dónde ganó; tocarla colorea por su votación */
+function linkRows(root) {
+  root.querySelectorAll('[data-cand]').forEach(el => {
+    el.onmouseenter = () => mapFocusCand(el.dataset.cand);
+    el.onmouseleave = () => highlight();
+    el.onclick = e => { if (e.target.closest('button,select')) return; const c = el.dataset.cand; if (ELS[S.el].cand.includes(c) && !c.startsWith('CAND_IND')) { S.modo = S.modo === c ? 'win' : c; fillModo(); paint(); } };
+  });
+}
+function mapFocusCand(c) {
+  const v = VK(S.vista), i = ELS[S.el].cand.indexOf(c); if (i < 0) return;
+  map.setPaintProperty('f-' + v.geo, 'fill-opacity', ['case', ['==', ['feature-state', 'wl'], i], .95, .08]);
 }
 
 /* =================== FICHA =================== */
 function current() { const s = S.sel || S.foco; return { u: s.u, key: s.key }; }
 function card(id, title, body, opts = {}) {
-  return `<section class="card" id="c-${id}"><div class="card-h"><h3>${title}</h3><div class="acts">${opts.extra || ''}<button class="zoom" data-zoom="${id}" title="Ampliar">${ICON_ZOOM}</button></div></div>${body}</section>`;
+  return `<section class="card${opts.cls ? ' ' + opts.cls : ''}" id="c-${id}"><div class="card-h"><h3>${title}</h3><div class="acts">${opts.extra || ''}${opts.zoom === false ? '' : `<button class="zoom" data-zoom="${id}" title="Ampliar">${ICON_ZOOM}</button>`}</div></div>${body}</section>`;
 }
 function context(u, key) {
-  const chip = (go, t) => `<button class="chip" data-go="${go}">${esc(t)}</button>`;
+  const chp = (go, t) => `<button class="chip" data-go="${go}">${esc(t)}</button>`;
   if (u === 'sec') { const p = GEO.secciones.byId[key].properties, cols = COLS_OF_SEC[key] || [];
-    return `<div class="chips">${chip('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chip('ja:' + p.ja, p.ja) : ''}${chip('dl:' + p.distrito_l, 'Distrito local ' + p.distrito_l)}${chip('df:' + p.distrito_f, 'Distrito federal ' + p.distrito_f)}</div>`
-      + (cols.length ? `<div class="chips">${cols.slice(0, 10).map(c => chip('col:' + c, GEO.colonias.byId[c].properties.nombre)).join('')}${cols.length > 10 ? `<span class="chip static">y ${cols.length - 10} colonias más</span>` : ''}</div>` : ''); }
+    return `<div class="chips">${chp('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chp('ja:' + p.ja, p.ja) : ''}${chp('dl:' + p.distrito_l, 'Distrito local ' + p.distrito_l)}${chp('df:' + p.distrito_f, 'Distrito federal ' + p.distrito_f)}</div>`
+      + (cols.length ? `<div class="chips">${cols.slice(0, 10).map(c => chp('col:' + c, GEO.colonias.byId[c].properties.nombre)).join('')}${cols.length > 10 ? `<span class="chip static">y ${cols.length - 10} colonias más</span>` : ''}</div>` : ''); }
   if (u === 'col') { const p = GEO.colonias.byId[key].properties;
-    return `<div class="chips"><span class="chip static">CP ${esc(p.cp)}</span>${chip('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chip('ja:' + p.ja, p.ja) : ''}${p.secs.map(s => chip('sec:' + s, 'Sección ' + s)).join('')}</div>`; }
+    return `<div class="chips"><span class="chip static">CP ${esc(p.cp)}</span>${chp('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chp('ja:' + p.ja, p.ja) : ''}${p.secs.map(s => chp('sec:' + s, 'Sección ' + s)).join('')}</div>`; }
   if (u === 'mun') { const mm = CAT.municipios.find(x => x.id === key), tags = [];
     if (key === 115) tags.push('Capital'); else if (mm && mm.det) tags.push('Conurbado'); if (mm && mm.zm) tags.push('Zona metropolitana');
     return `<div class="chips">${tags.map(t => `<span class="chip static">${t}</span>`).join('')}${DETOK.includes(key) && S.vista !== 'sec' ? `<button class="chip" data-secs="${key}">Ver sus secciones</button>` : ''}</div>`; }
@@ -409,49 +422,46 @@ function notes(u, a) {
   return out.map(t => `<div class="note">${esc(t)}</div>`).join('');
 }
 function renderPanel() {
-  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a);
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a), name = unitName(u, key);
   const crumb = S.sel ? `<div class="crumb"><button id="back">${esc(unitName(S.foco.u, S.foco.key))}</button><span>›</span><span>${esc(VK(S.sel.u).l)}</span></div>` : `<div class="crumb">${esc(m.cargo)} · ${m.anio}</div>`;
-  let h = `<div class="ph">${crumb}<h2>${esc(unitName(u, key))}</h2><div class="acts-top"><button class="btn pri" id="btn-deck">${ICON_DECK}Presentación</button></div></div>`;
+  let h = `<div class="ph">${crumb}<h2>${esc(name)}</h2><div class="acts-top"><button class="btn pri" id="btn-deck">${ICON_DECK}Presentación</button><button class="btn" id="btn-cmp">⇄ Comparar elecciones</button></div></div>`;
   if (a.n && a.t) {
     h += `<div class="kpis"><div class="kpi"><div class="v" ${a.ln ? `data-n="${a.ln}"` : ''}>${a.ln ? '0' : '—'}</div><div class="k">Lista nominal ${m.anio}</div></div><div class="kpi"><div class="v" data-n="${a.t}">0</div><div class="k">Votos</div></div><div class="kpi"><div class="v" ${a.ln ? `data-n="${pct(a.t, a.ln).toFixed(1)}" data-d="1" data-s=" %"` : ''}>${a.ln ? '0' : '—'}</div><div class="k">Participación</div></div></div>`;
-    if (w) { const who = personFor(S.el, u, key, w.c);
-      h += `<div class="win"><span class="bar" style="background:${candColor(w.c)}"></span><div>${w.tie ? '<div class="who-n">Empate</div>' : `<small>Ganó</small><div class="who-n">${esc(who || candLabel(w.c))}</div><small>${who ? esc(candLabel(w.c)) + ' · ' : ''}${p1(w.share)} · ventaja de ${w.margin.toFixed(1)} puntos sobre ${esc(shortCand(w.second || ''))}</small>`}</div></div>`; }
-    h += card('res', 'Resultados', (S.partes === 'cand' ? `<div class="res-grid">${donut(S.el, a, u, key, 170)}${bars(S.el, a, u, key, 'cand', { hideWin: true, short: true })}</div>` : columns(S.el, a)) + (S.partes === 'part' ? '<div class="src">Votos marcados solo con el logo de cada partido. Los votos a varios logos de una coalición cuentan para la candidatura.</div>' : ''),
+    h += card('res', `Resultados · ${esc(name)}`, S.partes === 'cand' ? resultsBlock(S.el, a, u, key) : partyBars(S.el, a),
       { extra: `<span class="tabs" id="partes"><button data-p="cand" class="${S.partes === 'cand' ? 'on' : ''}">Candidatura</button><button data-p="part" class="${S.partes === 'part' ? 'on' : ''}">Partido</button></span>` });
-    const cm = compare(u, key);
-    if (!cm) h += seatsCard();
-    if (cm) { const opts = CAT.elecciones.filter(e => e.id !== S.el).sort((x, y) => (cargoBase(x.cargo) === cargoBase(m.cargo) ? 0 : 1) - (cargoBase(y.cargo) === cargoBase(m.cargo) ? 0 : 1) || y.anio - x.anio);
-      h += seatsCard();
-      h += card('cmp', '¿Qué cambió?', cm.html, { extra: `<select class="cmp-sel" id="cmp-sel" aria-label="Elección para comparar">${opts.map(e => `<option value="${e.id}" ${e.id === cm.c.id ? 'selected' : ''}>${e.anio} · ${esc(cargoBase(e.cargo))}</option>`).join('')}</select>` }); }
+    const p = prevOf(S.el);
+    if (p) { const ap = agg(u, key, p.id), wp = verdict(p.id, ap);
+      if (wp && w) h += `<button class="cmp-mini" id="cmp-mini"><span>Frente a ${p.anio}</span><b>${leadOf(wp.c) === leadOf(w.c) ? `${esc(shortCand(w.c))} repitió` : `Cambió: antes ${esc(shortCand(wp.c))}, ahora ${esc(shortCand(w.c))}`}</b><em>Comparar ›</em></button>`; }
   } else if (u !== 'sec') h += `<div class="note">No hubo elección de ${esc(m.cargo.toLowerCase())} en ${m.anio} aquí.</div>`;
   h += notes(u, a) + context(u, key);
   const tr = trend(u, key); if (tr) h += card('tr', `${esc(cargoBase(m.cargo))} · cómo ha cambiado`, tr);
-  const P = padron(u, key); if (P) h += card('pad', `Lista nominal hoy · ${fmt(P[1])}`, pyramid(P) + `<div class="src">Padrón ${fmt(P[0])} · corte ${esc(CAT.padron.corte)}</div>`);
-  if (!S.sel && EST._afi) h += card('afi', 'Afiliados a partidos en Puebla', afiliados() + '<div class="src">Total estatal; no hay desglose por municipio.</div>');
-  h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.${P ? ' ' + esc(CAT.padron.fuente) + '.' : ''}${!S.sel && EST._afi ? ' ' + esc(CAT.afiliados.fuente) + '.' : ''}</div>`;
-  const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B);
+  const P = padron(u, key); if (P) h += card('pad', `Lista nominal hoy · ${fmt(P[1])}`, pyramid(P) + `<div class="src">Padrón ${fmt(P[0])} · corte ${esc(CAT.padron.corte)}</div>`, { zoom: false });
+  const st = seats(); if (st) h += card('seats', `<span class="tag">Todo el estado</span> ${esc(st.title)}`, seatsBody(st, 380), { cls: 'state' });
+  if (!S.sel && EST._afi) h += card('afi', '<span class="tag">Todo el estado</span> Afiliados por partido', afiliados() + `<div class="src">El INE publica solo el total del estado de Puebla; no hay cifra por municipio ni de Puebla capital. ${esc(CAT.afiliados.fuente)}.</div>`, { zoom: false, cls: 'state' });
+  h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.${P ? ' ' + esc(CAT.padron.fuente) + '.' : ''}</div>`;
+  const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B); linkRows(B);
   const back = $('#back'); if (back) back.onclick = () => select(null);
   $$('#partes button').forEach(b => b.onclick = () => { S.partes = b.dataset.p; renderPanel(); });
   $$('[data-go]').forEach(b => b.onclick = () => { const [v, k] = b.dataset.go.split(/:(.*)/s); goTo(v, k); });
   $$('[data-secs]').forEach(b => b.onclick = () => { const k = +b.dataset.secs; S.foco = { u: 'mun', key: k }; setVista('sec', true); select({ u: 'mun', key: k }); fitGeom(geomOf('mun', k)); });
   $$('[data-zoom]').forEach(b => b.onclick = () => expand(b.dataset.zoom));
   $$('#pbody [data-mun]').forEach(r => r.onclick = () => goTo('mun', r.dataset.mun));
-  const cs = $('#cmp-sel'); if (cs) cs.onchange = () => { S.cmp = cs.value; if (S.modo === 'cambio') paint(); else renderPanel(); };
+  $('#btn-cmp').onclick = openCompare; const cm = $('#cmp-mini'); if (cm) cm.onclick = openCompare;
   $('#btn-deck').onclick = openDeck;
   peekSize();
 }
 function expand(id) {
-  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), name = unitName(u, key);
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), name = unitName(u, key), w = verdict(S.el, a);
   let t = '', b = '';
-  if (id === 'res') { t = 'Resultados'; b = `<div class="mgrid"><div><h4 class="src">Por candidatura</h4>${donut(S.el, a, u, key, 240)}${bars(S.el, a, u, key, 'cand')}</div><div><h4 class="src">Por partido (votos con su logo)</h4>${columns(S.el, a, 460, 260)}</div></div>`; }
-  if (id === 'cmp') { const c = compare(u, key, 760, 380); t = `¿Qué cambió entre ${c.c.anio} y ${m.anio}?`; b = c.html; }
-  if (id === 'seats') { t = 'En todo el estado'; b = seatsCard(true); }
+  if (id === 'res') { const who = w ? personFor(S.el, u, key, w.c) : null; t = `Resultados · ${name}`;
+    b = (w && !w.tie ? `<div class="banner" style="--c:${candColor(w.c)}"><div><small>Ganó</small><b>${esc(who || shortCand(w.c))}</b><span>${chips(w.c)}</span></div><div class="bn-p">${p1(w.share)}<small>ventaja de ${w.margin.toFixed(1)} puntos</small></div></div>` : '')
+      + `<div class="mgrid"><div><h4 class="mh">Por candidatura</h4>${resultsBlock(S.el, a, u, key, true)}</div><div><h4 class="mh">Por partido</h4>${partyBars(S.el, a)}</div></div>`; }
   if (id === 'tr') { t = `${cargoBase(m.cargo)} · cómo ha cambiado`; b = trend(u, key, 760, 340); }
-  if (id === 'pad') { const P = padron(u, key); t = 'Lista nominal por edad y sexo'; b = `<div class="kpis"><div class="kpi"><div class="v" data-n="${P[0]}">0</div><div class="k">Padrón</div></div><div class="kpi"><div class="v" data-n="${P[1]}">0</div><div class="k">Lista nominal</div></div><div class="kpi"><div class="v" data-n="${pct(P[3], P[1]).toFixed(1)}" data-d="1" data-s=" %">0</div><div class="k">Mujeres</div></div></div>${pyramid(P)}<div class="src">Corte ${esc(CAT.padron.corte)}. ${esc(CAT.padron.fuente)}.</div>`; }
-  if (id === 'afi') { t = 'Afiliados a partidos en Puebla'; b = afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`; }
-  openModal(`<h3 id="mtitle">${esc(t)}</h3><p class="msub">${esc(name)} · ${esc(m.cargo)} ${m.anio}</p>${b}`);
+  if (id === 'seats') { const st = seats(); t = st.title; b = seatsBody(st, 680); }
+  openModal(`<h3 id="mtitle">${esc(t)}</h3><p class="msub">${esc(m.cargo)} ${m.anio}</p>${b}`);
+  linkRows($('#mbody'));
 }
-function openModal(html) { const M = $('#modal'); $('#mbody').innerHTML = html; M.hidden = false; animate(M); const close = () => M.hidden = true; $('#mclose').onclick = close; M.onclick = e => { if (e.target === M) close(); }; }
+function openModal(html) { const M = $('#modal'); $('#mbody').innerHTML = html; M.hidden = false; animate(M); const close = () => { M.hidden = true; highlight(); }; $('#mclose').onclick = close; M.onclick = e => { if (e.target === M) close(); }; }
 function showUsers() {
   const U = MB.admin.usuarios;
   openModal(`<h3 id="mtitle">Usuarios</h3><p class="msub">Se administran en el Excel de usuarios; al correr pipeline/acceso.py se vuelven a cifrar los accesos.</p><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Nivel</th><th>Ámbito</th></tr></thead><tbody>${U.map(u => `<tr><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${esc(u.nivel)}</td><td>${esc(u.ambito || 'Todo')}</td></tr>`).join('')}</tbody></table>`);
@@ -460,20 +470,18 @@ function showUsers() {
 /* =================== PRESENTACIÓN =================== */
 let DECK = 0, DECK_KEY = null, DECK_FIT = null;
 function openDeck() {
-  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a), name = unitName(u, key), P = padron(u, key), cm = a.t ? compare(u, key) : null;
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a), name = unitName(u, key), P = padron(u, key);
   let snap = ''; try { snap = map.getCanvas().toDataURL('image/jpeg', .85); } catch {}
   const who = w ? personFor(S.el, u, key, w.c) : null, foot = `<div class="s-foot">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.</div>`;
   const head = (eb, t) => `<div><div class="s-eyebrow">${esc(eb)}</div><h2>${esc(t)}</h2></div>`;
   const sl = [];
-  sl.push(`<div class="slide cover"><div class="cv-img" style="background-image:url(${snap})"></div><div class="cv-txt"><div class="s-eyebrow">${esc(m.cargo)} · ${m.anio}</div><h1>${esc(name)}</h1>${w ? `<div class="big-win">Ganó <b>${esc(who || candLabel(w.c))}</b>${who ? ' · ' + esc(shortCand(w.c)) : ''} con ${p1(w.share)}</div>` : ''}</div></div>`);
+  sl.push(`<div class="slide cover"><div class="cv-img" style="background-image:url(${snap})"></div><div class="cv-txt"><div class="s-eyebrow">${esc(m.cargo)} · ${m.anio}</div><h1>${esc(name)}</h1>${w ? `<div class="big-win">Ganó <b>${esc(who || shortCand(w.c))}</b>${who ? ' · ' + esc(shortCand(w.c)) : ''} con ${p1(w.share)}</div>` : ''}</div></div>`);
   if (a.t) sl.push(`<div class="slide">${head(name, 'Datos generales')}<div class="s-body"><div class="kpis"><div class="kpi"><div class="v">${a.ln ? fmt(a.ln) : '—'}</div><div class="k">Lista nominal ${m.anio}</div></div><div class="kpi"><div class="v">${fmt(a.t)}</div><div class="k">Votos emitidos</div></div><div class="kpi"><div class="v">${a.ln ? p1(pct(a.t, a.ln)) : '—'}</div><div class="k">Participación</div></div><div class="kpi"><div class="v">${w ? w.margin.toFixed(1) + ' pts' : '—'}</div><div class="k">Ventaja del primer lugar</div></div></div>
     ${P ? `<div class="two"><div class="kpis" style="grid-template-columns:1fr 1fr"><div class="kpi"><div class="v">${fmt(P[1])}</div><div class="k">Lista nominal hoy</div></div><div class="kpi"><div class="v">${p1(pct(P[3], P[1]))}</div><div class="k">Mujeres en la lista</div></div></div>${pyramid(P)}</div>` : ''}</div>${foot}</div>`);
-  if (a.t) sl.push(`<div class="slide">${head(name + ' · ' + m.anio, 'Resultados por candidatura')}<div class="s-body"><div class="two" style="grid-template-columns:360px 1fr">${donut(S.el, a, u, key, 340)}${bars(S.el, a, u, key, 'cand')}</div></div>${foot}</div>`);
-  const st = seats(); if (st) sl.push(`<div class="slide">${head('Estado de Puebla · ' + m.anio, st.title)}<div class="s-body"><div class="two"><div>${seatsChart(st, 560)}</div><div><p class="frase" style="font-size:24px">${st.veredicto}</p><div class="lgd" style="font-size:18px">${st.order.map(p => `<span><i style="background:${pcol(p)};width:22px;height:8px"></i>${esc(p)} ${st.cnt[p]}</span>`).join('')}</div></div></div></div>${foot}</div>`);
-  if (a.t) sl.push(`<div class="slide">${head(name + ' · ' + m.anio, 'Votos por partido')}<div class="s-body">${columns(S.el, a, 1160, 440)}</div>${foot}</div>`);
-  const cmb = a.t ? compare(u, key, 1160, 400) : null; if (cmb) sl.push(`<div class="slide">${head(name, `¿Qué cambió entre ${cmb.c.anio} y ${m.anio}?`)}<div class="s-body">${cmb.html}</div>${foot}</div>`);
+  if (a.t) sl.push(`<div class="slide">${head(name + ' · ' + m.anio, 'Resultados')}<div class="s-body"><div class="two" style="grid-template-columns:1.3fr 1fr">${resultsBlock(S.el, a, u, key, true)}<div>${partyBars(S.el, a)}</div></div></div>${foot}</div>`);
+  const st = seats(); if (st) sl.push(`<div class="slide">${head('Todo el estado de Puebla', st.title)}<div class="s-body">${seatsBody(st, 700)}</div>${foot}</div>`);
+  const p = prevOf(S.el); if (p && a.t) sl.push(`<div class="slide">${head(name, `${p.anio} frente a ${m.anio}`)}<div class="s-body">${cmpView(u, key, p.id, S.el, true)}</div>${foot}</div>`);
   const tr = trend(u, key, 1160, 430); if (tr) sl.push(`<div class="slide">${head(name, cargoBase(m.cargo) + ' · cómo ha cambiado')}<div class="s-body">${tr}</div>${foot}</div>`);
-  if (EST._afi && (u === 'mun' || u === 'est')) sl.push(`<div class="slide">${head('Estado de Puebla', 'Afiliados a partidos')}<div class="s-body">${afiliados()}</div><div class="s-foot">${esc(CAT.afiliados.fuente)}.</div></div>`);
   const D = $('#deck'), ST = $('#deck-stage'); ST.innerHTML = sl.join(''); D.hidden = false; DECK = 0;
   const slides = [...ST.querySelectorAll('.slide')];
   const fitS = () => { const r = ST.getBoundingClientRect(), k = Math.min((r.width - 24) / 1280, (r.height - 24) / 720); slides.forEach(s => s.style.transform = `translate(-50%,-50%) scale(${k})`); };
@@ -484,7 +492,7 @@ function openDeck() {
   DECK_KEY = e => { if (D.hidden) return; if (e.key === 'ArrowRight' || e.key === ' ') go(DECK + 1); else if (e.key === 'ArrowLeft') go(DECK - 1); else if (e.key === 'Escape') D.hidden = true; };
   DECK_FIT = fitS; window.addEventListener('keydown', DECK_KEY); window.addEventListener('resize', fitS);
   $('#deck-x').onclick = () => { D.hidden = true; };
-  $('#deck-pdf').onclick = () => { slides.forEach(s => s.querySelectorAll('[data-w]').forEach(el => el.style.width = el.dataset.w + '%')); window.print(); };
+  $('#deck-pdf').onclick = () => { slides.forEach(s => { s.querySelectorAll('[data-w]').forEach(el => el.style.width = el.dataset.w + '%'); s.querySelectorAll('.stk i').forEach(el => el.style.width = el.style.getPropertyValue('--w')); }); window.print(); };
   let x0 = null; ST.ontouchstart = e => x0 = e.touches[0].clientX; ST.ontouchend = e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) go(DECK + (dx < 0 ? 1 : -1)); x0 = null; };
 }
 
@@ -523,7 +531,7 @@ function setVista(k, keepSel) {
   map.setLayoutProperty('f-municipios', 'visibility', CAPAS.estado || k === 'mun' ? 'visible' : 'none');
   $$('#vistas button').forEach(b => b.classList.toggle('on', b.dataset.v === k));
   syncVistaAvail();
-  paint(); labels();
+  paint(); if (map.getLayer('dl-o')) applyCapas(); else labels();
   if (!keepSel) select(null); else select(S.sel);
 }
 function syncVistaAvail() {
@@ -560,10 +568,10 @@ function buildControls() {
   $('#modo').onchange = e => { S.modo = e.target.value; paint(); };
   syncElControls(); fillModo();
   const C = $('#capas'), btn = $('#btn-capas');
-  C.innerHTML = `<div class="grp"><h4>Ver a color</h4><div class="tabs alc" id="alcance">${[['foco', unitName(HOME.u, HOME.key)], ['zm', 'Zona metropolitana'], ['todo', 'Todo el estado']].map(([k, l]) => `<button data-alc="${k}" class="${CAPAS.alcance === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div></div>
+  C.innerHTML = `<div class="grp"><h4>Ver a color</h4><div class="tabs alc" id="alcance">${[['foco', unitName(HOME.u, HOME.key)], ['conurb', 'Zona conurbada'], ['zm', 'Zona metropolitana'], ['todo', 'Todo el estado']].map(([k, l]) => `<button data-alc="${k}" class="${CAPAS.alcance === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div></div>
     <div class="grp"><h4>Capas</h4>${CAPAS_DEF.map(([k, l, , sw]) => `<label class="tg"><input type="checkbox" data-capa="${k}" ${CAPAS[k] ? 'checked' : ''}>${l}${sw ? `<span class="sw-line" style="border-color:${LINE_COL[sw]}"></span>` : ''}</label>`).join('')}</div>`;
   $$('[data-alc]').forEach(b => b.onclick = () => { CAPAS.alcance = b.dataset.alc; store.set('pe_capas2', CAPAS); $$('[data-alc]').forEach(x => x.classList.toggle('on', x === b));
-    if (CAPAS.alcance === 'foco') goHome(); else { S.sel = null; select(null); fitGeom(CAPAS.alcance === 'zm' ? GEO.zm.features[0].geometry : GEO.estado_bbox); } labels(); });
+    if (CAPAS.alcance === 'foco') goHome(); else { S.sel = null; select(null); fitGeom(CAPAS.alcance === 'zm' ? GEO.zm.features[0].geometry : CAPAS.alcance === 'conurb' ? { coordinates: GEO.municipios.features.filter(f => f.properties.det).map(f => f.geometry.coordinates) } : GEO.estado_bbox); } labels(); });
   btn.onclick = () => { const o = C.hidden; C.hidden = !o; btn.setAttribute('aria-expanded', String(o)); };
   $$('[data-capa]').forEach(i => i.onchange = () => { CAPAS[i.dataset.capa] = i.checked; store.set('pe_capas2', CAPAS); applyCapas(); });
   $('#who').innerHTML = `<b>${esc(PERFIL.nombre)}</b> · ${esc(PERFIL.nivel_n)}${PERFIL.ambito ? ' ' + esc(PERFIL.ambito) : ''}`;
@@ -577,7 +585,7 @@ function applyCapas() {
   const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); };
   vis('f-municipios', CAPAS.estado || S.vista === 'mun'); vis('l-municipios', CAPAS.estado || S.vista === 'mun');
   vis('zm-l', CAPAS.zm); vis('det-l', CAPAS.conurb); vis('cap-l', CAPAS.conurb); vis('cap-glow', CAPAS.conurb);
-  vis('dl-o', CAPAS.dl); vis('df-o', CAPAS.df);
+  vis('dl-o', CAPAS.dl || S.vista === 'dl'); vis('df-o', CAPAS.df || S.vista === 'df'); vis('dl-c', CAPAS.dl || S.vista === 'dl'); vis('df-c', CAPAS.df || S.vista === 'df');
   for (const id of BASE_IDS) if (!/label|place|poi|name|road_shield|housenumber/.test(id) || true) vis(id, CAPAS.base);
   labels();
 }
@@ -664,13 +672,18 @@ function addLayers() {
   for (const v of VISTAS.filter(v => v.det)) addL({ id: 't-' + v.geo, type: 'fill', source: 'g-' + v.geo, layout: { visibility: 'none' }, filter: ['==', ['get', v.id], '__none__'], paint: { 'fill-pattern': 'trama', 'fill-opacity': .7 } });
   // divisiones: líneas sólidas; blancas entre unidades, gris institucional entre municipios
   for (const v of VISTAS.filter(v => v.k !== 'mun')) addL({ id: 'l-' + v.geo, type: 'line', source: 'g-' + v.geo, layout: { visibility: 'none', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': v.det ? W(.3, 1, 2) : W(1.4, 2.2, 3.2), 'line-opacity-transition': { duration: 450 } } });
-  addL({ id: 'l-municipios', type: 'line', source: 'g-municipios', layout: { 'line-join': 'round' }, paint: { 'line-color': '#828386', 'line-width': W(.8, 1.6, 2.6), 'line-opacity-transition': { duration: 450 } } });
-  addL({ id: 'dl-o', type: 'line', source: 'g-dl', layout: { 'line-join': 'round' }, paint: { 'line-color': LINE_COL.dl, 'line-width': W(1.6, 2.6, 3.6) } });
-  addL({ id: 'df-o', type: 'line', source: 'g-df', layout: { 'line-join': 'round' }, paint: { 'line-color': LINE_COL.df, 'line-width': W(1.6, 2.6, 3.6) } });
+  addL({ id: 'l-municipios', type: 'line', source: 'g-municipios', layout: { 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': W(1, 2, 3), 'line-opacity-transition': { duration: 450 } } });
+  for (const d of ['dl', 'df']) {
+    addL({ id: d + '-c', type: 'line', source: 'g-' + d, layout: { 'line-join': 'round', visibility: 'none' }, paint: { 'line-color': '#FFFFFF', 'line-width': W(4, 6, 8) } });
+    addL({ id: d + '-o', type: 'line', source: 'g-' + d, layout: { 'line-join': 'round' }, paint: { 'line-color': LINE_COL[d], 'line-width': W(2, 3, 4) } });
+  }
   addL({ id: 'zm-l', type: 'line', source: 'g-zm', layout: { 'line-join': 'round' }, paint: { 'line-color': LINE_COL.zm, 'line-width': W(1.6, 2.4, 3.2) } });
   addL({ id: 'det-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'det'], true], layout: { 'line-join': 'round' }, paint: { 'line-color': LINE_COL.det, 'line-width': W(1.4, 2.4, 3.2) } });
   addL({ id: 'cap-glow', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], paint: { 'line-color': '#000000', 'line-width': W(6, 10, 14), 'line-opacity': .18, 'line-blur': 6 } });
   addL({ id: 'cap-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], layout: { 'line-join': 'round' }, paint: { 'line-color': '#4A5350', 'line-width': W(2, 3.2, 4.2) } });
+  // contorno del municipio en foco: blanco grueso con sombra, se ve sobre cualquier color
+  addL({ id: 'foco-sh', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], -1], paint: { 'line-color': '#000000', 'line-width': W(7, 11, 15), 'line-opacity': .3, 'line-blur': 6 } });
+  addL({ id: 'foco-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], -1], layout: { 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': W(2.5, 4, 5.5) } });
   map.on('moveend', declutter);
   let hov = null; const tip = $('#tip');
   const clearHov = () => { if (hov) map.setFeatureState(hov, { h: false }); hov = null; };

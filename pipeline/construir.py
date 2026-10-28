@@ -167,6 +167,8 @@ EL = [  # archivo, id, año, cargo, unidad de coalición, fuente
  ('2024_SEE_DIP_LOC_MR_PUE_SEC', '2024-DL', 2024, 'Diputación local', 'DIS', 'IEE Puebla'),
  ('2024_SEE_AYUN_PUE_SEC', '2024-AYU', 2024, 'Presidencia municipal', 'MUN', 'IEE Puebla'),
 ]
+ANIO_MIN = 2015  # mismo periodo que el laboratorio político (2015–2024)
+EL = [e for e in EL if e[2] >= ANIO_MIN]
 # columnas que en elecciones viejas ya son una coalición registrada
 COAL = {'AC': 'PAN-PVEM', 'AM': 'PRD-PT-CONV-PSN-PAS', 'APM': 'PRI-PVEM', 'PBT': 'PRD-PT-CONV', 'PRIMERO_MEXICO': 'PRI-PVEM',
         'SALVEMOS_MEXICO': 'PT-CONV'}
@@ -315,7 +317,7 @@ for (anio, cargo), rows in G.items():
         key = (r.get('nombre'), r.get('dl'), r.get('df'), r.get('lista'))
         if key in seen: continue
         seen.add(key); out.append([r.get('partido') or '', r.get('actor') or ''])
-    CONG.setdefault(k[0], {}).setdefault(str(anio), {})[k[1]] = out
+    if anio >= ANIO_MIN: CONG.setdefault(k[0], {}).setdefault(str(anio), {})[k[1]] = out
 estado['_cong'] = CONG
 print('Composición:', {c: sorted(v) for c, v in CONG.items()})
 

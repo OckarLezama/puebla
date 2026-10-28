@@ -1,15 +1,15 @@
 # Puebla Electoral
 
-Resultados electorales 2000–2024 del estado de Puebla, con Puebla capital al centro y su zona conurbada al detalle (sección, colonia y junta auxiliar). Funciona en celular, tablet, laptop y pantallas grandes. Es una página estática con acceso por usuario y clave.
+Resultados electorales 2015–2024 (mismo periodo que el laboratorio político) del estado de Puebla, con Puebla capital al centro y su zona conurbada al detalle (sección, colonia y junta auxiliar). Funciona en celular, tablet, laptop y pantallas grandes. Es una página estática con acceso por usuario y clave.
 
 ## Qué contiene
 
 | Capa | Fuente |
 |---|---|
-| Municipios, distritos locales y federales, secciones, colonias, carreteras, calles, ríos y presas | INE, Base Geográfica Digital (corte dic-2025) |
+| Municipios, distritos locales y federales, secciones y colonias | INE, Base Geográfica Digital (corte dic-2025) |
 | Zona metropolitana (18 municipios de Puebla) | Delimitación INEGI/CONAPO de la ZM Puebla-Tlaxcala |
 | Juntas auxiliares de Puebla capital | Mapa PILOTO 5: cada sección va a la junta donde cae la mayor parte de sus colonias |
-| Resultados por sección | INE (Presidencia, Senado, Diputación federal 2000–2024) e IEE Puebla (Gubernatura, Diputación local y Ayuntamientos 2016–2024), datos abiertos |
+| Resultados por sección | INE (Presidencia, Senado, Diputación federal 2015–2024) e IEE Puebla (Gubernatura, Diputación local y Ayuntamientos 2016–2024), datos abiertos |
 | Quién ganó | Registro de candidaturas ganadoras del INE y del IEE Puebla |
 
 Detalle por sección en los 217 municipios. Colonias en Puebla y sus 6 conurbados; juntas auxiliares en Puebla capital.
@@ -45,3 +45,13 @@ Copiar `<salida>/geo` y `<salida>/catalogo.json` a `data/`. Para agregar una ele
 - **Distritos**: trazo vigente, armados con las secciones que hoy los forman; la ficha dice qué parte de los votos cubre.
 - **Secciones nuevas**: aparecen con trama en las elecciones anteriores a su creación.
 - **Colonias**: no son unidades electorales; suman completas las secciones que las cubren.
+
+## Qué muestra la plataforma (v6)
+
+- **Alcance del mapa** (Capas): solo Puebla capital, zona conurbada (7 municipios), zona metropolitana (18) o todo el estado, con nombres de municipios. Lo que queda fuera se difumina, nunca desaparece.
+- **Clic o búsqueda de un municipio**: se resalta con contorno blanco, lo demás se difumina, se acerca y muestra sus secciones. «Volver» regresa al inicio.
+- **Resultados** por candidatura (con nombre) y por partido; al pasar el cursor por una candidatura el mapa marca dónde ganó.
+- **Comparar elecciones**: ventana donde se eligen con claridad las dos elecciones (cargo y año) a comparar.
+- **Congreso**: cómo quedó la Cámara local (mayoría y plurinominales por partido de origen), las 16 diputaciones federales de Puebla y el Senado, con veredicto de mayoría.
+- **Padrón y lista nominal** por edad y sexo; **afiliados** solo como total del estado (el INE no publica cifras por municipio).
+- **Presentación** horizontal para exportar a PDF.
