@@ -5,35 +5,61 @@
 <title>Puebla Electoral</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Resultados electorales 2015–2024 del municipio de Puebla por sección, colonia, junta auxiliar y distrito.">
+<meta name="description" content="Resultados electorales 2000–2024 del estado de Puebla con detalle de Puebla capital y su zona conurbada.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="app.css">
-
 </head>
 <body>
-<div id="app">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-flor" viewBox="0 0 40 40"><path d="M20 3c4 0 6.5 3 6.5 6.5 0 .6-.1 1.2-.3 1.8.6-.2 1.2-.3 1.8-.3C31.5 11 34.5 13.5 34.5 17.5c0 1.5-.5 2.6-1.3 3.5h0c.8.9 1.3 2 1.3 3.5 0 4-3 6.5-6.5 6.5-.6 0-1.2-.1-1.8-.3.2.6.3 1.2.3 1.8C26.5 36 24 39 20 39s-6.5-3-6.5-6.5c0-.6.1-1.2.3-1.8-.6.2-1.2.3-1.8.3C8.5 31 5.5 28.5 5.5 24.5c0-1.5.5-2.6 1.3-3.5h0c-.8-.9-1.3-2-1.3-3.5C5.5 13.5 8.5 11 12 11c.6 0 1.2.1 1.8.3-.2-.6-.3-1.2-.3-1.8C13.5 6 16 3 20 3z"/></symbol>
+    <symbol id="i-rombo" viewBox="0 0 20 32"><path d="M10 0 20 16 10 32 0 16z"/></symbol>
+    <symbol id="i-rama" viewBox="0 0 40 40"><path d="M20 38c-1-6-1-12 0-18 1 6 1 12 0 18zM19 22c-6-1-11-5-12-12 6 1 10 5 12 12zm2 0c6-1 11-5 12-12-6 1-10 5-12 12zM19 15c-3-2-5-6-4-11 3 2 5 6 4 11zm2 0c3-2 5-6 4-11-3 2-5 6-4 11z"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============ ENTRADA ============ -->
+<section id="login" class="login">
+  <div class="login-art" aria-hidden="true"><canvas id="login-map"></canvas><div class="cenefa"></div></div>
+  <form id="login-form" class="login-card" autocomplete="on">
+    <div class="mark"><svg><use href="#i-flor"/></svg></div>
+    <h1>Puebla <span>Electoral</span></h1>
+    <p class="lead">Resultados de 2000 a 2024 en el estado, con Puebla capital y su zona conurbada al detalle.</p>
+    <label for="lg-user">Usuario</label>
+    <input id="lg-user" name="username" autocomplete="username" required autocapitalize="none" spellcheck="false">
+    <label for="lg-pass">Clave</label>
+    <input id="lg-pass" name="password" type="password" autocomplete="current-password" required>
+    <p class="err" id="lg-err" hidden></p>
+    <button type="submit" id="lg-btn">Entrar</button>
+    <p class="fine">Fuentes: INE e IEE Puebla, datos abiertos. Cartografía INE, diciembre de 2025.</p>
+  </form>
+</section>
+
+<!-- ============ PLATAFORMA ============ -->
+<div id="app" hidden>
   <header class="top">
-    <div class="brand">
-      <h1>Puebla <span>Electoral</span></h1>
-      <p class="sub" id="sub">Municipio de Puebla · resultados por sección</p>
-    </div>
-    <div class="search">
-      <label class="sr" for="q">Buscar</label>
-      <input id="q" type="search" placeholder="Sección, colonia, CP o junta" autocomplete="off">
-      <ul id="qres" class="qres" hidden></ul>
-    </div>
-    <div class="controls" id="controls">
-      <div class="ctl">
-        <label for="cargo">Elección</label>
-        <div class="row">
-          <select id="cargo"></select>
-          <div class="seg" id="anios" role="group" aria-label="Año"></div>
-        </div>
+    <div class="row1">
+      <div class="brand"><svg class="logo"><use href="#i-flor"/></svg><b>Puebla</b> <span>Electoral</span></div>
+      <div class="search">
+        <label class="sr" for="q">Buscar</label>
+        <input id="q" type="search" placeholder="Municipio, sección, colonia o CP" autocomplete="off">
+        <ul id="qres" class="qres" hidden></ul>
       </div>
-      <div class="ctl">
+      <div class="user">
+        <button id="btn-users" class="ghost" hidden>Usuarios</button>
+        <span class="who" id="who"></span>
+        <button id="btn-out" class="ghost" title="Salir">Salir</button>
+      </div>
+    </div>
+    <div class="row2" id="controls">
+      <div class="ctl el">
+        <label for="cargo">Elección</label>
+        <div class="row"><select id="cargo"></select><div class="seg years" id="anios" role="group" aria-label="Año"></div></div>
+      </div>
+      <div class="ctl vista">
         <span class="lbl">Ver por</span>
         <div class="seg" id="vistas" role="group" aria-label="Ver por"></div>
       </div>
@@ -41,15 +67,18 @@
         <label for="modo">Colorear por</label>
         <select id="modo"></select>
       </div>
+      <button id="btn-capas" class="capas-btn" aria-expanded="false" aria-controls="capas"><svg><use href="#i-rombo"/></svg>Capas</button>
     </div>
+    <div class="cenefa thin" aria-hidden="true"></div>
   </header>
 
   <main class="stage">
-    <div id="map" aria-label="Mapa del municipio de Puebla"></div>
+    <div id="map" aria-label="Mapa del estado de Puebla"></div>
     <section class="hero" id="hero" aria-live="polite"></section>
+    <div class="capas" id="capas" hidden></div>
     <div class="legend" id="legend"></div>
     <div class="tip" id="tip" hidden></div>
-    <div class="loading" id="loading">Cargando resultados…</div>
+    <div class="loading" id="loading"><svg class="spin"><use href="#i-flor"/></svg><span>Cargando…</span></div>
   </main>
 
   <aside class="panel" id="panel" data-state="peek">
@@ -57,6 +86,8 @@
     <div class="pbody" id="pbody"></div>
   </aside>
 </div>
+
+<div class="modal" id="modal" hidden><div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mtitle"><div id="mbody"></div><button class="ghost close" id="mclose">Cerrar</button></div></div>
 
 <script src="vendor/maplibre-gl.js"></script>
 <script src="app.js"></script>
