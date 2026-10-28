@@ -967,3 +967,6 @@ details.dz[open] > summary { margin-bottom: 8px; }
 .ubi-c { flex-wrap: nowrap; gap: 3px; overflow-x: auto; scrollbar-width: none; } .ubi-c .chip { min-width: 0; padding: 3px 7px; font-size: 12px; flex: none; }
 .fz.cg-r.on, .fz-r.cg-r.on { background: color-mix(in srgb, var(--oro) 22%, transparent); box-shadow: inset 3px 0 0 var(--oro-d); }
 .fz-r.cg-r[data-pinc] { cursor: pointer; }
+.legend .lg-pat { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; } .legend .lg-pl { font-size: 11px; color: var(--muted); flex-basis: 100%; }
+.legend .lg-pat em { font-style: normal; color: var(--muted); margin: 0 2px; } .legend .lg-pat b { margin-left: 4px; }
+.tip b.tb { display: inline; font-size: 12.5px; }
