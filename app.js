@@ -1,6 +1,6 @@
-/* Puebla Electoral — resultados 2000–2024 del estado de Puebla, con Puebla capital y conurbados al detalle.
-   Datos públicos sin cifrar: cartografía (data/geo) y catálogo. Resultados cifrados por paquete (data/seguro) y abiertos
-   con la clave de cada usuario (data/acceso.json). Sin servidor. */
+/* Puebla Electoral — resultados 2000–2024 del estado de Puebla con Puebla capital al centro.
+   Datos públicos: cartografía (data/geo) y catálogo. Resultados, padrón y afiliados cifrados por paquete (data/seguro),
+   abiertos con la clave de cada usuario (data/acceso.json). Sin servidor. */
 (() => {
 'use strict';
 const $ = s => document.querySelector(s);
@@ -13,6 +13,8 @@ const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 const sess = { get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} }, del(k) { try { sessionStorage.removeItem(k); } catch {} } };
+const ICON_ZOOM = '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>';
+const ICON_DECK = '<svg viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
 
 /* ---------- partidos ---------- */
 const PARTY = {
@@ -27,17 +29,17 @@ const PARTY = {
   MP: ['#607D8B', 'México Posible'], PLM: ['#607D8B', 'Partido Liberal Mexicano'], FC: ['#607D8B', 'Fuerza Ciudadana'],
 };
 const IND = '#7C8585';
+const pcol = p => (PARTY[p] || [IND])[0];
 const candLabel = c => c.startsWith('CAND_IND') ? 'Independiente' : c.split('-').join(' · ');
-const candColor = c => c.startsWith('CAND_IND') ? IND : (PARTY[c.split('-')[0]] || [IND])[0];
+const candColor = c => c.startsWith('CAND_IND') ? IND : pcol(c.split('-')[0]);
 const candTitle = c => c.startsWith('CAND_IND') ? 'Candidatura independiente' : c.split('-').map(p => (PARTY[p] || [0, p])[1]).join(', ');
 const shortCand = c => c.startsWith('CAND_IND') ? 'Independiente' : c.split('-')[0] + (c.includes('-') ? ' y aliados' : '');
+const leadOf = c => c.startsWith('CAND_IND') ? 'IND' : c.split('-')[0];
 function hex2rgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(x => x + x).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 function mix(a, b, t) { const A = hex2rgb(a), B = hex2rgb(b); return '#' + A.map((v, i) => Math.round(v * (1 - t) + B[i] * t).toString(16).padStart(2, '0')).join(''); }
-const titleCase = s => String(s).toLowerCase().replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
 
-/* ---------- estado ---------- */
+/* ---------- estado de la aplicación ---------- */
 const CARGOS = ['Presidencia municipal', 'Diputación local', 'Diputación federal', 'Gubernatura', 'Senaduría', 'Presidencia de la República'];
-const CARGO_CORTO = { 'Presidencia municipal': 'Pres. municipal', 'Diputación local': 'Dip. local', 'Diputación federal': 'Dip. federal', Gubernatura: 'Gubernatura', 'Senaduría': 'Senaduría', 'Presidencia de la República': 'Presidencia' };
 const cargoBase = c => c.replace(' (extraordinaria)', '');
 const VISTAS = [
   { k: 'sec', l: 'Sección', geo: 'secciones', id: 'seccion', det: true },
@@ -47,9 +49,9 @@ const VISTAS = [
   { k: 'dl', l: 'Dist. local', geo: 'dl', id: 'distrito_l' },
   { k: 'df', l: 'Dist. federal', geo: 'df', id: 'distrito_f' },
 ];
-const UNIDAD = { sec: ['sección', 'secciones'], col: ['colonia', 'colonias'], ja: ['junta', 'juntas'], mun: ['municipio', 'municipios'], dl: ['distrito', 'distritos'], df: ['distrito', 'distritos'] };
-const S = { el: '2024-AYU', vista: 'sec', modo: 'win', sel: null, partes: 'cand' };
-let CAT, ELS = {}, EST, MB = {}, GEO = {}, PERFIL, map, AGG = {}, MUNN = {}, SECMUN = {}, COLS_OF_SEC = {}, DETOK = [];
+const VK = k => VISTAS.find(v => v.k === k);
+const S = { el: '2024-AYU', vista: 'sec', modo: 'win', sel: null, foco: null, cmp: null, partes: 'cand' };
+let CAT, ELS = {}, EST, MB = {}, GEO = {}, PERFIL, map, AGG = {}, MUNAGG = {}, MUNN = {}, SECMUN = {}, COLS_OF_SEC = {}, DETOK = [], HOME;
 const CAPAS_DEF = [
   ['estado', 'Municipios del estado', true, null], ['zm', 'Zona metropolitana', true, 'dash'], ['conurb', 'Puebla y conurbados', true, 'solid'],
   ['dl', 'Distritos locales', false, 'dash2'], ['df', 'Distritos federales', false, 'dash3'], ['carr', 'Carreteras', true, null], ['calles', 'Calles, ríos y presas', true, null],
@@ -59,10 +61,7 @@ let CAPAS = Object.assign(Object.fromEntries(CAPAS_DEF.map(c => [c[0], c[2]])), 
 /* =================== ACCESO =================== */
 const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const b64e = b => btoa(String.fromCharCode(...new Uint8Array(b)));
-async function aesOpen(rawKey, buf) {
-  const k = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
-  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, k, buf.slice(12));
-}
+async function aesOpen(rawKey, buf) { const k = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']); return crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, k, buf.slice(12)); }
 async function gunzipJSON(buf) { return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).json(); }
 async function login(usuario, clave) {
   const A = await fetch('data/acceso.json', { cache: 'no-cache' }).then(r => r.json());
@@ -72,8 +71,7 @@ async function login(usuario, clave) {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(clave), 'PBKDF2', false, ['deriveKey']);
   const kek = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64d(e.s), iterations: A.it, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
   let perfil;
-  try { const p = b64d(e.p); perfil = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: p.slice(0, 12) }, kek, p.slice(12)))); }
-  catch { throw new Error('auth'); }
+  try { const p = b64d(e.p); perfil = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: p.slice(0, 12) }, kek, p.slice(12)))); } catch { throw new Error('auth'); }
   const keys = {};
   for (const cab in e.k) { const b = b64d(e.k[cab]); keys[cab] = b64e(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, kek, b.slice(12))); }
   return { perfil, keys };
@@ -82,6 +80,7 @@ async function openBundle(cab, key) {
   const r = await fetch('data/seguro/' + cab + '.txt', { cache: 'no-cache' }); if (!r.ok) throw new Error(cab + ' ' + r.status);
   return gunzipJSON(await aesOpen(b64d(key), b64d((await r.text()).trim())));
 }
+async function pool(items, n, fn) { const out = []; let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } })); return out; }
 
 /* =================== AGREGACIÓN =================== */
 const EMPTY = () => ({ ln: 0, t: 0, nu: 0, nr: 0, c: null, p: null, n: 0, nx: 0, tx: 0 });
@@ -91,7 +90,7 @@ function addPack(o, pk) {
   o.ln += pk[0]; o.t += pk[1]; o.nu += pk[2]; o.nr += pk[3]; o.n++;
   if (pk[6]) { o.nx++; o.tx += pk[1]; }
 }
-function secPack(eid, s) { const m = SECMUN[s]; return m && MB[m] && MB[m][eid] ? MB[m][eid][s] : null; }
+const secPack = (eid, s) => { const m = SECMUN[s]; return m && MB[m] && MB[m][eid] ? MB[m][eid][s] : null; };
 function unitSecs(u, key) {
   if (u === 'sec') return [key];
   if (u === 'col') return GEO.colonias.byId[key].properties.secs;
@@ -99,14 +98,13 @@ function unitSecs(u, key) {
   return [];
 }
 function agg(u, key, eid) {
-  const o = EMPTY(), E = EST[eid];
-  if (!E) return o;
+  const o = EMPTY(), E = EST[eid]; if (!E) return o;
   if (u === 'est') addPack(o, E.est);
   else if (u === 'mun') addPack(o, E.mun[key]);
   else if (u === 'dl' || u === 'df') addPack(o, E[u][key]);
   else {
     for (const s of unitSecs(u, key)) addPack(o, secPack(eid, s));
-    if (u === 'ja' && MB[115] && MB[115][eid]) for (const [s, pk] of Object.entries(MB[115][eid])) if (pk[6] && pk[7] === key) addPack(o, pk);
+    if (u === 'ja' && MB[115] && MB[115][eid]) for (const pk of Object.values(MB[115][eid])) if (pk[6] && pk[7] === key) addPack(o, pk);
   }
   return o;
 }
@@ -116,101 +114,99 @@ function verdict(eid, a) {
   const v1 = r[0].v, v2 = r[1] ? r[1].v : 0;
   return { c: r[0].c, share: pct(v1, a.t), margin: pct(v1 - v2, a.t), tie: v1 === v2, second: r[1] && r[1].c };
 }
-function munOfUnit(u, key) {
-  if (u === 'mun') return key;
-  if (u === 'sec') return SECMUN[key];
-  if (u === 'col') return GEO.colonias.byId[key].properties.municipio;
-  if (u === 'ja') return 115;
-  return null;
-}
-/* nombre de quien encabezó la candidatura, cuando el registro de ganadores lo permite */
+function blocs(eid, a) { const by = {}; if (a.t) for (const x of ranking(eid, a)) { const p = leadOf(x.c); by[p] = (by[p] || 0) + pct(x.v, a.t); } return by; }
+function munOfUnit(u, key) { if (u === 'mun') return key; if (u === 'sec') return SECMUN[key]; if (u === 'col') return GEO.colonias.byId[key].properties.municipio; if (u === 'ja') return 115; return null; }
 function personFor(eid, u, key, cand) {
   const E = EST[eid], g = E && E.g; if (!g) return null;
-  const t = ELS[eid].tipo;
-  const lead = cand.split('-')[0], match = w => w && w[1].split(/[_-]/).includes(lead) ? w[0] : null;
+  const t = ELS[eid].tipo, lead = leadOf(cand), match = w => w && w[1].split(/[_-]/).includes(lead) ? w[0] : null;
   if (t === 'AYU') { const mm = munOfUnit(u, key); return mm ? match(g['m' + mm]) : null; }
   if (t === 'GOB' || t === 'PRE') { if (g.est && !g.est[1]) { const w = verdict(eid, agg('est', 0, eid)); return w && w.c === cand ? g.est[0] : null; } return match(g.est); }
   if ((t === 'DL' || t === 'DF') && u === t.toLowerCase()) return match(g[u + key]);
   if (t === 'SEN' && g.est_sen) { const n = g.est_sen.filter(w => match(w)).map(w => w[0]); return n.length ? n.join(' y ') : null; }
   return null;
 }
+function padron(u, key) {
+  const P = EST._pad; if (!P) return null;
+  let r = null;
+  const add = b => { if (!b) return; if (!r) { r = [b[0], b[1], b[2], b[3], b[4], b[5].slice(), b[6].slice()]; return; } for (let i = 0; i < 5; i++) r[i] += b[i]; for (let i = 0; i < b[5].length; i++) { r[5][i] += b[5][i]; r[6][i] += b[6][i]; } };
+  if (u === 'est') add(P.est); else if (u === 'mun' || u === 'dl' || u === 'df') add(P[u][key]);
+  else for (const s of unitSecs(u, key)) { const m = SECMUN[s]; add(MB[m] && MB[m]._pad && MB[m]._pad[s]); }
+  return r;
+}
+const prevOf = eid => { const e = ELS[eid]; return CAT.elecciones.filter(x => cargoBase(x.cargo) === cargoBase(e.cargo) && !x.cargo.includes('extra') && x.anio < e.anio).sort((a, b) => b.anio - a.anio)[0]; };
+const cmpEl = () => (S.cmp && ELS[S.cmp] && S.cmp !== S.el) ? ELS[S.cmp] : prevOf(S.el);
 
-/* =================== COLOR =================== */
+/* =================== COLOR DEL MAPA =================== */
 const BINS_P = [40, 50, 60, 70], BINS_C = [20, 35, 50, 65];
 const binIdx = (v, bins) => { let i = 0; while (i < bins.length && v >= bins[i]) i++; return i; };
 const rampColor = (base, i) => mix(base, cssVar('--mapbg') || '#eeeeee', [0.82, 0.62, 0.42, 0.2, 0][i]);
-function colorFor(u) {
+function colorFor(u, key, vk) {
   const nores = cssVar('--nores');
   if (!u || !u.w) return nores;
-  if (S.modo === 'win') {
-    if (u.w.tie) return '#9AA3A3';
-    return mix(candColor(u.w.c), cssVar('--mapbg'), u.w.margin < 5 ? 0.55 : u.w.margin < 15 ? 0.28 : 0);
+  if (S.modo === 'win') return u.w.tie ? '#9AA3A3' : mix(candColor(u.w.c), cssVar('--mapbg'), u.w.margin < 5 ? 0.5 : u.w.margin < 15 ? 0.25 : 0);
+  if (S.modo === 'part') return u.a.ln ? rampColor('#4C6B66', binIdx(pct(u.a.t, u.a.ln), BINS_P)) : nores;
+  if (S.modo === 'cambio') {
+    const c = cmpEl(); if (!c) return nores;
+    const w0 = verdict(c.id, agg(vk, key, c.id));
+    if (!w0) return nores;
+    return leadOf(w0.c) !== leadOf(u.w.c) ? candColor(u.w.c) : mix(candColor(u.w.c), cssVar('--mapbg'), .8);
   }
-  if (S.modo === 'part') return u.a.ln ? rampColor('#5E6B67', binIdx(pct(u.a.t, u.a.ln), BINS_P)) : nores;
   const i = ELS[S.el].cand.indexOf(S.modo);
   return i < 0 ? nores : rampColor(candColor(S.modo), binIdx(pct(u.a.c[i], u.a.t), BINS_C));
 }
 function computeAgg(vk) {
-  const v = VISTAS.find(x => x.k === vk), out = {};
+  const v = VK(vk), out = {};
   for (const f of GEO[v.geo].features) { const key = f.properties[v.id]; const a = agg(vk, key, S.el); out[key] = { a, w: verdict(S.el, a) }; }
   return out;
 }
-let MUNAGG = {};
+/* qué se ve nítido: la selección o el foco; lo demás se difumina */
+function highlight() {
+  const h = S.sel || S.foco, v = VK(S.vista), VIV = .93, DIM = .13;
+  const munOf = h.u === 'mun' ? h.key : munOfUnit(h.u, h.key);
+  let e;
+  if (v.det) {
+    if (h.u === 'dl' || h.u === 'df') e = v.k === 'sec' ? ['==', ['get', h.u === 'dl' ? 'distrito_l' : 'distrito_f'], h.key] : false;
+    else e = v.k === 'ja' ? (munOf === 115) : ['==', ['get', 'municipio'], munOf ?? -1];
+  } else if (S.sel && S.sel.u === S.vista) e = ['==', ['get', v.id], S.sel.key];
+  else if (S.sel && v.k === 'mun' && munOf != null) e = ['==', ['get', 'municipio'], munOf];
+  else e = true;
+  const hov = ['boolean', ['feature-state', 'h'], false];
+  const op = e === true ? ['case', hov, 1, VIV] : e === false ? ['case', hov, .4, DIM] : ['case', hov, ['case', e, 1, .45], ['case', e, VIV, DIM]];
+  map.setPaintProperty('f-' + v.geo, 'fill-opacity', op);
+  map.setPaintProperty('l-' + v.geo, 'line-opacity', e === true ? 1 : e === false ? .3 : ['case', e, 1, .25]);
+  if (v.k !== 'mun') map.setPaintProperty('f-municipios', 'fill-opacity', v.det ? .1 : .08);
+  const home = S.foco.u === HOME.u && S.foco.key === HOME.key && !S.sel && S.vista === HOME.vista;
+  $('#btn-home').hidden = home; placeHome();
+}
 function paint() {
   AGG = computeAgg(S.vista);
   MUNAGG = S.vista === 'mun' ? AGG : computeAgg('mun');
-  for (const [k, u] of Object.entries(MUNAGG)) map.setFeatureState({ source: 'g-municipios', id: k }, { c: colorFor(u) });
-  if (S.vista !== 'mun') { const v = VISTAS.find(x => x.k === S.vista); for (const [k, u] of Object.entries(AGG)) map.setFeatureState({ source: 'g-' + v.geo, id: k }, { c: colorFor(u) }); }
-  const v = VISTAS.find(x => x.k === S.vista);
-  if (v.det) {
-    const sin = Object.keys(AGG).filter(k => !AGG[k].w).map(k => keyOf(S.vista, k));
-    map.setFilter('t-' + v.geo, ['in', ['get', v.id], ['literal', sin]]);
-  }
-  legend(); hero(); renderPanel();
+  for (const [k, u] of Object.entries(MUNAGG)) map.setFeatureState({ source: 'g-municipios', id: k }, { c: colorFor(u, +k, 'mun') });
+  const v = VK(S.vista);
+  if (S.vista !== 'mun') for (const [k, u] of Object.entries(AGG)) map.setFeatureState({ source: 'g-' + v.geo, id: k }, { c: colorFor(u, S.vista === 'ja' ? k : +k, S.vista) });
+  if (v.det) map.setFilter('t-' + v.geo, ['in', ['get', v.id], ['literal', Object.keys(AGG).filter(k => !AGG[k].w).map(k => S.vista === 'ja' ? k : +k)]]);
+  highlight(); legend(); hero(); renderPanel();
 }
 
 /* =================== LEYENDA Y RESUMEN =================== */
 function legend() {
   const L = $('#legend'), m = ELS[S.el]; let h = '';
-  if (S.modo === 'win') {
-    const g = cssVar('--fg'), bg = cssVar('--mapbg');
-    h += `<h4>Ventaja de quien ganó</h4><div class="items"><span class="it"><span class="sw" style="background:${mix(g, bg, .55)}"></span>Menos de 5 pts</span><span class="it"><span class="sw" style="background:${mix(g, bg, .28)}"></span>5 a 15</span><span class="it"><span class="sw" style="background:${g}"></span>Más de 15</span></div>`;
-  } else {
-    const isP = S.modo === 'part', base = isP ? '#5E6B67' : candColor(S.modo), bins = isP ? BINS_P : BINS_C;
-    h += `<h4>${isP ? 'Participación (% de la lista nominal)' : 'Votación de ' + esc(candLabel(S.modo)) + ' (% de votos)'}</h4><div class="ramp">${[0, 1, 2, 3, 4].map(i => `<span style="background:${rampColor(base, i)}"></span>`).join('')}</div><div class="rampl"><span>0</span>${bins.map(b => `<span>${b}</span>`).join('')}<span>100</span></div>`;
-    if (isP && !m.ln) h += '<div class="items"><span class="it">El cómputo de ' + m.anio + ' no trae lista nominal.</span></div>';
-  }
-  const v = VISTAS.find(x => x.k === S.vista), nores = Object.values(AGG).filter(u => !u.w).length;
-  if (nores && v.det) h += `<div class="items"><span class="it"><span class="sw" style="background:${cssVar('--nores')};background-image:repeating-linear-gradient(135deg,rgba(110,120,115,.6) 0 1px,transparent 1px 4px)"></span>${S.vista === 'sec' ? 'Secciones creadas después de ' + m.anio : 'Sin resultados en ' + m.anio} (${nores})</span></div>`;
+  const g = cssVar('--fg'), bg = cssVar('--mapbg');
+  if (S.modo === 'win') h += `<h4>Ventaja de quien ganó</h4><div class="items"><span class="it"><span class="sw" style="background:${mix(g, bg, .5)}"></span>Menos de 5 pts</span><span class="it"><span class="sw" style="background:${mix(g, bg, .25)}"></span>5 a 15</span><span class="it"><span class="sw" style="background:${g}"></span>Más de 15</span></div>`;
+  else if (S.modo === 'cambio') { const c = cmpEl(); const n = Object.entries(AGG).filter(([k, u]) => u.w && c && (w0 => w0 && leadOf(w0.c) !== leadOf(u.w.c))(verdict(c.id, agg(S.vista, S.vista === 'ja' ? k : +k, c.id)))).length;
+    h += `<h4>Cambio de ganador respecto a ${c ? c.anio : '—'}</h4><div class="items"><span class="it"><span class="sw" style="background:${g}"></span>Cambió (${n})</span><span class="it"><span class="sw" style="background:${mix(g, bg, .8)}"></span>Mismo partido</span></div>`; }
+  else { const isP = S.modo === 'part', base = isP ? '#4C6B66' : candColor(S.modo), bins = isP ? BINS_P : BINS_C;
+    h += `<h4>${isP ? 'Participación (% de la lista nominal)' : 'Votación de ' + esc(candLabel(S.modo)) + ' (%)'}</h4><div class="ramp">${[0, 1, 2, 3, 4].map(i => `<span style="background:${rampColor(base, i)}"></span>`).join('')}</div><div class="rampl"><span>0</span>${bins.map(b => `<span>${b}</span>`).join('')}<span>100</span></div>`;
+    if (isP && !m.ln) h += `<div class="items"><span class="it">El cómputo de ${m.anio} no trae lista nominal.</span></div>`; }
+  const v = VK(S.vista), nores = Object.values(AGG).filter(u => !u.w).length;
+  if (nores && v.k === 'sec') h += `<div class="items"><span class="it"><span class="sw" style="background:${cssVar('--nores')};background-image:repeating-linear-gradient(135deg,rgba(110,120,115,.6) 0 1px,transparent 1px 4px)"></span>Secciones creadas después de ${m.anio}</span></div>`;
   L.innerHTML = h;
 }
-function focus() {
-  if (PERFIL.nivel === 5) { const t = PERFIL.ambito.slice(0, 2).toLowerCase(), k = +PERFIL.ambito.slice(2); return { u: t, key: k, name: (t === 'dl' ? 'Distrito local ' : 'Distrito federal ') + k }; }
-  if (PERFIL.nivel === 4 && PERFIL.ambito) { const k = +PERFIL.ambito; return { u: 'mun', key: k, name: k === 115 ? 'Puebla capital' : MUNN[k] }; }
-  return { u: 'mun', key: 115, name: 'Puebla capital' };
+function homeFoco() {
+  if (PERFIL.nivel === 5) { const t = PERFIL.ambito.slice(0, 2).toLowerCase(); return { u: t, key: +PERFIL.ambito.slice(2) }; }
+  if (PERFIL.nivel === 4 && PERFIL.ambito) return { u: 'mun', key: +PERFIL.ambito };
+  return { u: 'mun', key: 115 };
 }
-function hero() {
-  const F = focus(), m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a);
-  // unidades ganadas dentro del foco (en vista de municipio o distrito, en todo el estado)
-  const v = VISTAS.find(x => x.k === S.vista), won = {};
-  const inFocus = f => { const p = f.properties; if (!v.det) return true;
-    if (F.u === 'mun') return v.k === 'ja' ? F.key === 115 : (p.municipio === F.key);
-    if (v.k === 'sec') return p[F.u === 'dl' ? 'distrito_l' : 'distrito_f'] === F.key;
-    const ss = v.k === 'col' ? p.secs : unitSecs('ja', p.ja); return ss.some(s => { const q = GEO.secciones.byId[s]; return q && q.properties[F.u === 'dl' ? 'distrito_l' : 'distrito_f'] === F.key; }); };
-  for (const f of GEO[v.geo].features) { const u = AGG[f.properties[v.id]]; if (u && u.w && !u.w.tie && inFocus(f)) won[u.w.c] = (won[u.w.c] || 0) + 1; }
-  const un = UNIDAD[S.vista][1], top = r.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
-  const H = $('#hero'), open = H.classList.contains('open');
-  const who = w ? personFor(S.el, F.u, F.key, w.c) : null;
-  H.innerHTML = `<button class="hero-toggle" aria-label="Ver resumen"></button>
-    <div><div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(F.name)} · ${m.anio}</div><h2>${esc(m.cargo)}<small>${a.t ? (a.ln ? p1(pct(a.t, a.ln)) + ' de participación' : fmt(a.t) + ' votos') : 'Sin elección en ' + m.anio}</small></h2></div>
-    ${a.t ? `<div class="stack" title="Reparto de la votación">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}" title="${esc(candLabel(x.c))} ${p1(pct(x.v, a.t))}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
-    ${w && !w.tie ? `<div class="who-won">Ganó <b>${esc(who || shortCand(w.c))}</b>${who ? ` <span style="color:var(--muted)">(${esc(shortCand(w.c))})</span>` : ''}</div>` : ''}
-    <div class="rows">${top.map(x => `<div class="r"><span class="sw" style="background:${candColor(x.c)}"></span><span class="nm" title="${esc(candTitle(x.c))}">${esc(candLabel(x.c))}</span><span class="pc">${p1(pct(x.v, a.t))}</span><span class="wn">${won[x.c] || 0} ${un}</span></div>`).join('')}</div>` : ''}`;
-  if (open) H.classList.add('open');
-  H.querySelector('.hero-toggle').onclick = () => H.classList.toggle('open');
-}
-
-/* =================== FICHA =================== */
 function unitName(u, key) {
   if (u === 'est') return 'Estado de Puebla';
   if (u === 'mun') return key === 115 ? 'Puebla capital' : MUNN[key];
@@ -220,66 +216,113 @@ function unitName(u, key) {
   if (u === 'dl') return 'Distrito local ' + key;
   if (u === 'df') return 'Distrito federal ' + key;
 }
-function bars(eid, a, u, key) {
-  const m = ELS[eid]; let rows;
-  if (S.partes === 'cand') rows = ranking(eid, a).map(x => ({ l: candLabel(x.c), s: personFor(eid, u, key, x.c), t: candTitle(x.c), col: candColor(x.c), v: x.v }));
-  else rows = m.part.map((p, i) => ({ l: p, t: (PARTY[p] || [0, p])[1], col: (PARTY[p] || [IND])[0], v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v);
-  rows.push({ l: 'Votos nulos', col: cssVar('--muted'), v: a.nu, minor: true });
-  if (a.nr) rows.push({ l: 'Candidaturas no registradas', col: cssVar('--muted'), v: a.nr, minor: true });
+function placeHome() { const H = $('#hero'), B = $('#btn-home'); if (!isMobile()) B.style.top = (H.offsetTop + H.offsetHeight + 10) + 'px'; else B.style.top = ''; }
+function hero() {
+  const F = S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a);
+  const top = r.slice(0, 4), rest = a.t - top.reduce((s, x) => s + x.v, 0), who = w ? personFor(S.el, F.u, F.key, w.c) : null;
+  $('#hero').innerHTML = `<div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(unitName(F.u, F.key))} · ${esc(cargoBase(m.cargo))} ${m.anio}</div>
+    ${w ? `<div class="hw"><b>${w.tie ? 'Empate' : esc(who || shortCand(w.c))}</b><span class="pc" style="color:${candColor(w.c)}">${p1(w.share)}</span></div>
+    <div class="stack">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}" title="${esc(candLabel(x.c))} ${p1(pct(x.v, a.t))}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
+    <div class="hs"><span>${who ? esc(shortCand(w.c)) : 'Ventaja ' + w.margin.toFixed(1) + ' pts'}</span><span>${a.ln ? 'Participación ' + p1(pct(a.t, a.ln)) : fmt(a.t) + ' votos'}</span></div>`
+    : `<div class="hs"><span>No hubo esta elección en ${m.anio}.</span></div>`}`;
+  placeHome();
+}
+
+/* =================== GRÁFICAS =================== */
+function barRows(eid, a, u, key, mode) {
+  const m = ELS[eid];
+  return mode === 'cand' ? ranking(eid, a).map(x => ({ l: candLabel(x.c), s: personFor(eid, u, key, x.c), t: candTitle(x.c), col: candColor(x.c), v: x.v }))
+    : m.part.map((p, i) => ({ l: p, t: (PARTY[p] || [0, p])[1], col: pcol(p), v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v);
+}
+function bars(eid, a, u, key, mode, opts = {}) {
+  const rows = barRows(eid, a, u, key, mode);
+  if (!opts.noNulos) { rows.push({ l: 'Votos nulos', col: cssVar('--muted'), v: a.nu, minor: true }); if (a.nr) rows.push({ l: 'No registradas', col: cssVar('--muted'), v: a.nr, minor: true }); }
   const max = Math.max(...rows.map(r => r.v), 1);
-  return `<div class="bars">${rows.map(r => `<div class="b${r.minor ? ' minor' : ''}" title="${esc(r.t || '')}"><span class="n">${esc(r.l)}${r.s ? `<small>${esc(r.s)}</small>` : ''}</span><span class="vv">${fmt(r.v)}</span><span class="pp">${p1(pct(r.v, a.t))}</span><span class="track"><i style="width:${(r.v / max * 100).toFixed(1)}%;background:${r.col}"></i></span></div>`).join('')}</div>`;
+  return `<div class="bars">${rows.map(r => `<div class="b${r.minor ? ' minor' : ''}" title="${esc(r.t || '')}"><span class="n">${esc(r.l)}${r.s ? `<small>${esc(r.s)}</small>` : ''}</span><span class="vv">${fmt(r.v)}</span><span class="pp">${p1(pct(r.v, a.t))}</span><span class="track"><i data-w="${(r.v / max * 100).toFixed(1)}" style="background:${r.col}"></i></span></div>`).join('')}</div>`;
 }
-function history(u, key) {
-  const years = [...new Set(CAT.elecciones.map(e => e.anio))].sort((a, b) => a - b);
-  let h = `<div class="grid-h"><table><thead><tr><th></th>${years.map(y => `<th>${String(y).slice(2)}</th>`).join('')}</tr></thead><tbody>`;
-  for (const c of CARGOS) {
-    h += `<tr><th>${CARGO_CORTO[c]}</th>`;
-    for (const y of years) {
-      const e = CAT.elecciones.find(x => x.anio === y && cargoBase(x.cargo) === c);
-      if (!e) { h += '<td></td>'; continue; }
-      const a = agg(u, key, e.id), w = verdict(e.id, a);
-      h += w ? `<td><button data-el="${e.id}" class="${e.id === S.el ? 'on' : ''}" style="background:${w.tie ? '#9AA3A3' : candColor(w.c)}" title="${y} · ${esc(e.cargo)}: ${esc(w.tie ? 'empate' : candLabel(w.c) + ' ' + p1(w.share))}"></button></td>`
-             : `<td><div class="none" title="${y} · ${esc(e.cargo)}: sin resultados aquí"></div></td>`;
-    }
-    h += '</tr>';
-  }
-  return h + '</tbody></table></div><div class="src">Cada cuadro es una elección pintada con el color de quien ganó aquí. Tócalo para verla.</div>';
+/* columnas por partido (votos con su logo) */
+function columns(eid, a, W = 380, H = 190) {
+  const m = ELS[eid], rows = m.part.map((p, i) => ({ p, v: a.p[i] })).filter(x => x.v > 0).sort((x, y) => y.v - x.v).slice(0, 10);
+  if (!rows.length) return '';
+  const max = Math.max(...rows.map(r => r.v)), L = 6, B = 34, T = 22, bw = (W - L * 2) / rows.length;
+  let g = `<line class="ax" x1="0" x2="${W}" y1="${H - B}" y2="${H - B}"/>`;
+  rows.forEach((r, i) => { const h = (H - B - T) * r.v / max, x = L + i * bw + bw * .14, w = bw * .72, y = H - B - h;
+    g += `<rect class="col" style="animation-delay:${i * .05}s" x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${pcol(r.p)}"><title>${esc((PARTY[r.p] || [0, r.p])[1])}: ${fmt(r.v)}</title></rect>`
+      + `<text class="lbl-v" x="${x + w / 2}" y="${y - 6}" text-anchor="middle">${pct(r.v, a.t).toFixed(1)}</text><text x="${x + w / 2}" y="${H - B + 15}" text-anchor="middle">${esc(r.p)}</text>`; });
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Votos por partido">${g}</svg></div>`;
 }
-function trend(u, key) {
+function trendData(u, key) {
   const cargo = cargoBase(ELS[S.el].cargo);
-  const pts = CAT.elecciones.filter(e => cargoBase(e.cargo) === cargo && !e.cargo.includes('extra')).sort((a, b) => a.anio - b.anio).map(e => {
-    const a = agg(u, key, e.id), by = {};
-    if (a.t) for (const x of ranking(e.id, a)) { const p = x.c.startsWith('CAND_IND') ? 'IND' : x.c.split('-')[0]; by[p] = (by[p] || 0) + pct(x.v, a.t); }
-    return { e, a, by, part: a.ln ? pct(a.t, a.ln) : null };
+  return CAT.elecciones.filter(e => cargoBase(e.cargo) === cargo && !e.cargo.includes('extra')).sort((a, b) => a.anio - b.anio).map(e => {
+    const a = agg(u, key, e.id); return { e, a, by: blocs(e.id, a), part: a.ln ? pct(a.t, a.ln) : null };
   }).filter(p => p.a.t);
-  if (pts.length < 2) return '';
+}
+function trend(u, key, W = 380, H = 190) {
+  const pts = trendData(u, key); if (pts.length < 2) return '';
   const tot = {}; pts.forEach(p => Object.entries(p.by).forEach(([k, v]) => tot[k] = (tot[k] || 0) + v));
   const lead = Object.entries(tot).filter(([k]) => k !== 'IND').sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
-  const W = 360, Hh = 160, L = 30, R = 10, T = 10, B = 22, xs = i => L + i * (W - L - R) / (pts.length - 1), ys = v => T + (1 - v / 100) * (Hh - T - B);
+  const L = 30, R = 12, T = 12, B = 24, xs = i => L + i * (W - L - R) / (pts.length - 1), ys = v => T + (1 - v / 100) * (H - T - B);
+  const path = vals => vals.map((v, i) => [xs(i), ys(v)]).reduce((s, [x, y], i, arr) => { if (!i) return `M${x},${y}`; const [px, py] = arr[i - 1], cx = (px + x) / 2; return s + ` C${cx},${py} ${cx},${y} ${x},${y}`; }, '');
   let g = [0, 25, 50, 75, 100].map(v => `<line class="ax" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text x="${L - 6}" y="${ys(v) + 3.5}" text-anchor="end">${v}</text>`).join('');
-  g += pts.map((p, i) => `<text x="${xs(i)}" y="${Hh - 4}" text-anchor="middle">${p.e.anio}</text>`).join('');
-  const line = (vals, col, dash) => `<polyline fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round" ${dash ? 'stroke-dasharray="4 4"' : ''} points="${vals.map((v, i) => v == null ? '' : xs(i) + ',' + ys(v)).join(' ')}"/>` + vals.map((v, i) => v == null ? '' : `<circle cx="${xs(i)}" cy="${ys(v)}" r="${i === vals.length - 1 ? 4 : 2.8}" fill="${col}"><title>${pts[i].e.anio}: ${p1(v)}</title></circle>`).join('');
-  if (pts.some(p => p.part != null)) g += line(pts.map(p => p.part), cssVar('--muted'), true);
-  for (const p of lead) g += line(pts.map(x => x.by[p] || 0), (PARTY[p] || [IND])[0]);
-  return `<div class="sec trend"><h3><span>${esc(cargo)} · cómo ha cambiado</span></h3><svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Tendencia de votación">${g}</svg>
-    <div class="lg">${lead.map(p => `<span><i style="background:${(PARTY[p] || [IND])[0]}"></i>${p}${pts.some(x => ranking(x.e.id, x.a).some(r => r.c.split('-')[0] === p && r.c.includes('-'))) ? ' y aliados' : ''}</span>`).join('')}<span><i style="background:${cssVar('--muted')}"></i>Participación</span></div></div>`;
+  g += pts.map((p, i) => `<text x="${xs(i)}" y="${H - 6}" text-anchor="middle" ${p.e.id === S.el ? 'class="lbl-v"' : ''}>${p.e.anio}</text>`).join('');
+  const sel = pts.findIndex(p => p.e.id === S.el); if (sel >= 0) g += `<line x1="${xs(sel)}" x2="${xs(sel)}" y1="${T}" y2="${H - B}" stroke="${cssVar('--oro')}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+  const part = pts.map(p => p.part);
+  if (part.every(v => v != null)) g += `<path d="${path(part)}" fill="none" stroke="${cssVar('--muted')}" stroke-width="2" stroke-dasharray="4 4"/>`;
+  lead.forEach((p, j) => { const vals = pts.map(x => x.by[p] || 0), d = path(vals), c = pcol(p);
+    if (j === 0) g += `<path d="${d} L${xs(vals.length - 1)},${ys(0)} L${xs(0)},${ys(0)} Z" fill="${c}" opacity=".09"/>`;
+    g += `<path class="ln" style="animation-delay:${j * .15}s" d="${d}" fill="none" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>` + vals.map((v, i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="${i === sel ? 4.5 : 3}" fill="${c}"><title>${pts[i].e.anio} · ${p}: ${p1(v)}</title></circle>`).join(''); });
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tendencia">${g}</svg></div><div class="lgd">${lead.map(p => `<span><i style="background:${pcol(p)}"></i>${p}${pts.some(x => ranking(x.e.id, x.a).some(r => leadOf(r.c) === p && r.c.includes('-'))) ? ' y aliados' : ''}</span>`).join('')}${part.every(v => v != null) ? `<span><i style="background:${cssVar('--muted')}"></i>Participación</span>` : ''}</div>`;
+}
+function compare(u, key) {
+  const c = cmpEl(); if (!c) return null;
+  const a1 = agg(u, key, S.el), a0 = agg(u, key, c.id); if (!a1.t || !a0.t) return { c, html: `<div class="note">Sin resultados aquí en ${c.anio}.</div>` };
+  const b1 = blocs(S.el, a1), b0 = blocs(c.id, a0);
+  const parts = [...new Set([...Object.keys(b1), ...Object.keys(b0)])].filter(p => p !== 'IND').sort((x, y) => Math.max(b1[y] || 0, b0[y] || 0) - Math.max(b1[x] || 0, b0[x] || 0)).slice(0, 5);
+  const max = Math.max(...parts.map(p => Math.max(b1[p] || 0, b0[p] || 0)), 1);
+  const d = (v1, v0) => { const x = v1 - v0; return `<span class="d ${Math.abs(x) < .5 ? 'eq' : x > 0 ? 'up' : 'dn'}">${x > 0 ? '+' : ''}${x.toFixed(1)} pts</span>`; };
+  const pa1 = a1.ln ? pct(a1.t, a1.ln) : null, pa0 = a0.ln ? pct(a0.t, a0.ln) : null;
+  const w1 = verdict(S.el, a1), w0 = verdict(c.id, a0), allR = ranking(S.el, a1).concat(ranking(c.id, a0));
+  let h = `<div class="cmp">${parts.map(p => `<div class="cr"><span class="n">${esc(p)}${allR.some(r => leadOf(r.c) === p && r.c.includes('-')) ? ' y aliados' : ''}</span>${d(b1[p] || 0, b0[p] || 0)}
+    <div class="pair"><div class="old" title="${c.anio}: ${p1(b0[p] || 0)}"><i data-w="${((b0[p] || 0) / max * 100).toFixed(1)}" style="background:${pcol(p)}"></i></div><div title="${ELS[S.el].anio}: ${p1(b1[p] || 0)}"><i data-w="${((b1[p] || 0) / max * 100).toFixed(1)}" style="background:${pcol(p)}"></i></div></div></div>`).join('')}
+    ${pa1 != null && pa0 != null ? `<div class="cr"><span class="n">Participación</span>${d(pa1, pa0)}<div class="pair"><div class="old"><i data-w="${pa0.toFixed(1)}" style="background:var(--muted)"></i></div><div><i data-w="${pa1.toFixed(1)}" style="background:var(--muted)"></i></div></div></div>` : ''}</div>
+    <div class="cmp-lg"><span><i class="o"></i>${c.anio} · ${esc(cargoBase(c.cargo))}</span><span><i></i>${ELS[S.el].anio}</span></div>`;
+  if (w1 && w0) h += `<div class="note">${leadOf(w1.c) === leadOf(w0.c) ? `Ganó el mismo partido que en ${c.anio}.` : `Cambió de ganador: en ${c.anio} ganó ${esc(shortCand(w0.c))}.`}</div>`;
+  return { c, html: h };
+}
+function pyramid(P) {
+  if (!P) return '';
+  const G = CAT.padron.grupos, mx = Math.max(...P[5], ...P[6], 1);
+  return `<div class="pyr">${G.map((g, i) => `<span class="h" data-w="${(P[5][i] / mx * 100).toFixed(1)}" title="Hombres ${g}: ${fmt(P[5][i])}"></span><span class="g">${g}</span><span class="m" data-w="${(P[6][i] / mx * 100).toFixed(1)}" title="Mujeres ${g}: ${fmt(P[6][i])}"></span>`).reverse().join('')}</div>
+    <div class="pyr-lg"><span>Hombres ${p1(pct(P[2], P[1]))}</span><span>Mujeres ${p1(pct(P[3], P[1]))}</span></div>`;
+}
+function afiliados() {
+  const A = EST._afi; if (!A) return '';
+  const rows = Object.entries(A).map(([p, d]) => ({ p, v: d.t })).sort((a, b) => b.v - a.v), max = rows[0].v, tot = rows.reduce((s, r) => s + r.v, 0);
+  return `<div class="bars">${rows.map(r => `<div class="b"><span class="n">${esc(r.p)}</span><span class="vv">${fmt(r.v)}</span><span class="pp">${p1(pct(r.v, tot))}</span><span class="track"><i data-w="${(r.v / max * 100).toFixed(1)}" style="background:${pcol(r.p)}"></i></span></div>`).join('')}</div>`;
+}
+function animate(root) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.querySelectorAll('[data-w]').forEach(el => el.style.width = el.dataset.w + '%');
+    root.querySelectorAll('[data-n]').forEach(el => { const to = +el.dataset.n, dec = +(el.dataset.d || 0), suf = el.dataset.s || '', t0 = performance.now();
+      const step = t => { const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3), v = to * e; el.textContent = (dec ? v.toFixed(dec) : fmt(v)) + suf; if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
+  }));
+}
+
+/* =================== FICHA =================== */
+function current() { const s = S.sel || S.foco; return { u: s.u, key: s.key }; }
+function card(id, title, body, opts = {}) {
+  return `<section class="card" id="c-${id}"><div class="card-h"><h3>${title}</h3><div class="acts">${opts.extra || ''}<button class="zoom" data-zoom="${id}" title="Ampliar">${ICON_ZOOM}</button></div></div>${body}</section>`;
 }
 function context(u, key) {
   const chip = (go, t) => `<button class="chip" data-go="${go}">${esc(t)}</button>`;
-  if (u === 'sec') {
-    const p = GEO.secciones.byId[key].properties, cols = (COLS_OF_SEC[key] || []);
+  if (u === 'sec') { const p = GEO.secciones.byId[key].properties, cols = COLS_OF_SEC[key] || [];
     return `<div class="chips">${chip('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chip('ja:' + p.ja, p.ja) : ''}${chip('dl:' + p.distrito_l, 'Distrito local ' + p.distrito_l)}${chip('df:' + p.distrito_f, 'Distrito federal ' + p.distrito_f)}</div>`
-      + (cols.length ? `<div class="sec"><h3>Colonias en esta sección</h3><div class="chips">${cols.slice(0, 14).map(c => chip('col:' + c, GEO.colonias.byId[c].properties.nombre)).join('')}${cols.length > 14 ? `<span class="chip static">y ${cols.length - 14} más</span>` : ''}</div></div>` : '');
-  }
-  if (u === 'col') {
-    const p = GEO.colonias.byId[key].properties;
-    return `<div class="chips"><span class="chip static">CP ${esc(p.cp)}</span>${chip('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chip('ja:' + p.ja, p.ja) : ''}</div><div class="sec"><h3>Secciones que la cubren</h3><div class="chips">${p.secs.map(s => chip('sec:' + s, s)).join('')}</div></div>`;
-  }
-  if (u === 'mun') {
-    const mm = CAT.municipios.find(x => x.id === key); const tags = [];
+      + (cols.length ? `<div class="chips">${cols.slice(0, 10).map(c => chip('col:' + c, GEO.colonias.byId[c].properties.nombre)).join('')}${cols.length > 10 ? `<span class="chip static">y ${cols.length - 10} colonias más</span>` : ''}</div>` : ''); }
+  if (u === 'col') { const p = GEO.colonias.byId[key].properties;
+    return `<div class="chips"><span class="chip static">CP ${esc(p.cp)}</span>${chip('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chip('ja:' + p.ja, p.ja) : ''}${p.secs.map(s => chip('sec:' + s, 'Sección ' + s)).join('')}</div>`; }
+  if (u === 'mun') { const mm = CAT.municipios.find(x => x.id === key), tags = [];
     if (key === 115) tags.push('Capital'); else if (mm && mm.det) tags.push('Conurbado'); if (mm && mm.zm) tags.push('Zona metropolitana');
-    return tags.length ? `<div class="chips">${tags.map(t => `<span class="chip static">${t}</span>`).join('')}</div>` : '';
-  }
+    return `<div class="chips">${tags.map(t => `<span class="chip static">${t}</span>`).join('')}${DETOK.includes(key) && S.vista !== 'sec' ? `<button class="chip" data-secs="${key}">Ver sus secciones</button>` : ''}</div>`; }
   return '';
 }
 function notes(u, a) {
@@ -287,74 +330,127 @@ function notes(u, a) {
   if (u === 'sec' && !a.n) out.push(`Esta sección se creó después de ${m.anio}. Sus votos de esa elección están en el total del municipio, en la sección de la que se separó.`);
   if (u === 'col') out.push('Una colonia no es unidad electoral: la cifra suma completas las secciones que la cubren.');
   if (u === 'ja' && a.nx) out.push(`Incluye ${fmt(a.tx)} votos de ${a.nx} secciones que el INE dividió después de ${m.anio}.`);
-  if (u === 'dl' || u === 'df') out.push(`Distrito con su trazo vigente, armado con las secciones que hoy lo forman${m.cobertura_distritos < 0.99 ? ` (cubre ${Math.round(m.cobertura_distritos * 100)} % de los votos de ${m.anio}; el resto fue en secciones que ya no existen)` : ''}.`);
-  if (m.tipo === 'AYU' && u === 'est') out.push('Suma de los 217 ayuntamientos: cada municipio eligió por separado.');
+  if ((u === 'dl' || u === 'df') && m.cobertura_distritos < .99) out.push(`Distrito con su trazo vigente; cubre ${Math.round(m.cobertura_distritos * 100)} % de los votos de ${m.anio}, el resto fue en secciones que ya no existen.`);
   return out.map(t => `<div class="note">${esc(t)}</div>`).join('');
 }
 function renderPanel() {
-  const F = focus(), u = S.sel != null ? S.vista : F.u, key = S.sel != null ? S.sel : F.key, m = ELS[S.el];
-  const a = agg(u, key, S.el), w = verdict(S.el, a);
-  const crumb = S.sel != null ? `<div class="crumb"><button id="back">${esc(F.name)}</button><span>›</span><span>${esc(VISTAS.find(v => v.k === S.vista).l)}</span></div>` : `<div class="crumb">${esc(m.cargo)} · ${m.anio}</div>`;
-  let h = `<div class="ph">${crumb}<h2>${esc(unitName(u, key))}</h2><div class="meta">${S.sel != null ? esc(m.cargo) + ' · ' + m.anio : 'Toca el mapa para ver cualquier zona'}</div></div>`;
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a);
+  const crumb = S.sel ? `<div class="crumb"><button id="back">${esc(unitName(S.foco.u, S.foco.key))}</button><span>›</span><span>${esc(VK(S.sel.u).l)}</span></div>` : `<div class="crumb">${esc(m.cargo)} · ${m.anio}</div>`;
+  let h = `<div class="ph">${crumb}<h2>${esc(unitName(u, key))}</h2><div class="acts-top"><button class="btn pri" id="btn-deck">${ICON_DECK}Presentación</button></div></div>`;
   if (a.n && a.t) {
-    h += `<div class="kpis"><div class="kpi"><div class="v">${a.ln ? fmt(a.ln) : '—'}</div><div class="k">Lista nominal</div></div><div class="kpi"><div class="v">${fmt(a.t)}</div><div class="k">Votos</div></div><div class="kpi"><div class="v">${a.ln ? p1(pct(a.t, a.ln)) : '—'}</div><div class="k">Participación</div></div></div>`;
+    h += `<div class="kpis"><div class="kpi"><div class="v" ${a.ln ? `data-n="${a.ln}"` : ''}>${a.ln ? '0' : '—'}</div><div class="k">Lista nominal ${m.anio}</div></div><div class="kpi"><div class="v" data-n="${a.t}">0</div><div class="k">Votos</div></div><div class="kpi"><div class="v" ${a.ln ? `data-n="${pct(a.t, a.ln).toFixed(1)}" data-d="1" data-s=" %"` : ''}>${a.ln ? '0' : '—'}</div><div class="k">Participación</div></div></div>`;
     if (w) { const who = personFor(S.el, u, key, w.c);
       h += `<div class="win"><span class="bar" style="background:${candColor(w.c)}"></span><div>${w.tie ? '<div class="who-n">Empate</div>' : `<small>Ganó</small><div class="who-n">${esc(who || candLabel(w.c))}</div><small>${who ? esc(candLabel(w.c)) + ' · ' : ''}${p1(w.share)} · ventaja de ${w.margin.toFixed(1)} puntos sobre ${esc(shortCand(w.second || ''))}</small>`}</div></div>`; }
-    h += `<div class="sec"><h3><span>Votos</span><span class="seg" id="partes"><button data-p="cand" class="${S.partes === 'cand' ? 'on' : ''}">Candidaturas</button><button data-p="part" class="${S.partes === 'part' ? 'on' : ''}">Partidos</button></span></h3>${bars(S.el, a, u, key)}</div>`;
-    if (S.partes === 'part') h += '<div class="src">Por partido cuentan solo los votos con su logo. Los votos que marcaron varios logos de una coalición van a la candidatura.</div>';
-  } else if (!(u === 'sec')) h += `<div class="note">No hubo elección de ${esc(m.cargo.toLowerCase())} en ${m.anio} aquí.</div>`;
-  h += notes(u, a) + context(u, key) + trend(u, key);
-  h += `<div class="sec"><h3>Todas las elecciones · 2000–2024</h3>${history(u, key)}</div>`;
-  h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.${u === 'ja' || (u === 'sec' && GEO.secciones.byId[key] && GEO.secciones.byId[key].properties.ja) ? ' ' + esc(CAT.fuentes.juntas) + '.' : ''}</div>`;
-  $('#pbody').innerHTML = h; $('#pbody').scrollTop = 0;
+    h += card('res', 'Resultados', (S.partes === 'cand' ? bars(S.el, a, u, key, 'cand') : columns(S.el, a)) + (S.partes === 'part' ? '<div class="src">Votos marcados solo con el logo de cada partido. Los votos a varios logos de una coalición cuentan para la candidatura.</div>' : ''),
+      { extra: `<span class="tabs" id="partes"><button data-p="cand" class="${S.partes === 'cand' ? 'on' : ''}">Candidatura</button><button data-p="part" class="${S.partes === 'part' ? 'on' : ''}">Partido</button></span>` });
+    const cm = compare(u, key);
+    if (cm) { const opts = CAT.elecciones.filter(e => e.id !== S.el).sort((x, y) => (cargoBase(x.cargo) === cargoBase(m.cargo) ? 0 : 1) - (cargoBase(y.cargo) === cargoBase(m.cargo) ? 0 : 1) || y.anio - x.anio);
+      h += card('cmp', 'Comparar con', cm.html, { extra: `<select class="cmp-sel" id="cmp-sel" aria-label="Elección para comparar">${opts.map(e => `<option value="${e.id}" ${e.id === cm.c.id ? 'selected' : ''}>${e.anio} · ${esc(cargoBase(e.cargo))}</option>`).join('')}</select>` }); }
+  } else if (u !== 'sec') h += `<div class="note">No hubo elección de ${esc(m.cargo.toLowerCase())} en ${m.anio} aquí.</div>`;
+  h += notes(u, a) + context(u, key);
+  const tr = trend(u, key); if (tr) h += card('tr', `${esc(cargoBase(m.cargo))} · cómo ha cambiado`, tr);
+  const P = padron(u, key); if (P) h += card('pad', `Lista nominal hoy · ${fmt(P[1])}`, pyramid(P) + `<div class="src">Padrón ${fmt(P[0])} · corte ${esc(CAT.padron.corte)}</div>`);
+  if (!S.sel && EST._afi) h += card('afi', 'Afiliados a partidos en Puebla', afiliados() + '<div class="src">Total estatal; no hay desglose por municipio.</div>');
+  h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.${P ? ' ' + esc(CAT.padron.fuente) + '.' : ''}${!S.sel && EST._afi ? ' ' + esc(CAT.afiliados.fuente) + '.' : ''}</div>`;
+  const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B);
   const back = $('#back'); if (back) back.onclick = () => select(null);
   $$('#partes button').forEach(b => b.onclick = () => { S.partes = b.dataset.p; renderPanel(); });
-  $$('.grid-h button').forEach(b => b.onclick = () => setEl(b.dataset.el));
   $$('[data-go]').forEach(b => b.onclick = () => { const [v, k] = b.dataset.go.split(/:(.*)/s); goTo(v, k); });
+  $$('[data-secs]').forEach(b => b.onclick = () => { const k = +b.dataset.secs; S.foco = { u: 'mun', key: k }; setVista('sec', true); select({ u: 'mun', key: k }); fitGeom(geomOf('mun', k)); });
+  $$('[data-zoom]').forEach(b => b.onclick = () => expand(b.dataset.zoom));
+  const cs = $('#cmp-sel'); if (cs) cs.onchange = () => { S.cmp = cs.value; if (S.modo === 'cambio') paint(); else renderPanel(); };
+  $('#btn-deck').onclick = openDeck;
   peekSize();
+}
+function expand(id) {
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), name = unitName(u, key);
+  let t = '', b = '';
+  if (id === 'res') { t = 'Resultados'; b = `<div class="mgrid"><div><h4 class="src">Por candidatura</h4>${bars(S.el, a, u, key, 'cand')}</div><div><h4 class="src">Por partido (votos con su logo)</h4>${columns(S.el, a, 460, 260)}</div></div>`; }
+  if (id === 'cmp') { const c = compare(u, key); t = `Comparación ${c.c.anio} y ${m.anio}`; b = c.html; }
+  if (id === 'tr') { t = `${cargoBase(m.cargo)} · cómo ha cambiado`; b = trend(u, key, 760, 340); }
+  if (id === 'pad') { const P = padron(u, key); t = 'Lista nominal por edad y sexo'; b = `<div class="kpis"><div class="kpi"><div class="v" data-n="${P[0]}">0</div><div class="k">Padrón</div></div><div class="kpi"><div class="v" data-n="${P[1]}">0</div><div class="k">Lista nominal</div></div><div class="kpi"><div class="v" data-n="${pct(P[3], P[1]).toFixed(1)}" data-d="1" data-s=" %">0</div><div class="k">Mujeres</div></div></div>${pyramid(P)}<div class="src">Corte ${esc(CAT.padron.corte)}. ${esc(CAT.padron.fuente)}.</div>`; }
+  if (id === 'afi') { t = 'Afiliados a partidos en Puebla'; b = afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`; }
+  openModal(`<h3 id="mtitle">${esc(t)}</h3><p class="msub">${esc(name)} · ${esc(m.cargo)} ${m.anio}</p>${b}`);
+}
+function openModal(html) { const M = $('#modal'); $('#mbody').innerHTML = html; M.hidden = false; animate(M); const close = () => M.hidden = true; $('#mclose').onclick = close; M.onclick = e => { if (e.target === M) close(); }; }
+function showUsers() {
+  const U = MB.admin.usuarios;
+  openModal(`<h3 id="mtitle">Usuarios</h3><p class="msub">Se administran en el Excel de usuarios; al correr pipeline/acceso.py se vuelven a cifrar los accesos.</p><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Nivel</th><th>Ámbito</th></tr></thead><tbody>${U.map(u => `<tr><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${esc(u.nivel)}</td><td>${esc(u.ambito || 'Todo')}</td></tr>`).join('')}</tbody></table>`);
+}
+
+/* =================== PRESENTACIÓN =================== */
+let DECK = 0, DECK_KEY = null, DECK_FIT = null;
+function openDeck() {
+  const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), w = verdict(S.el, a), name = unitName(u, key), P = padron(u, key), cm = a.t ? compare(u, key) : null;
+  let snap = ''; try { snap = map.getCanvas().toDataURL('image/jpeg', .85); } catch {}
+  const who = w ? personFor(S.el, u, key, w.c) : null, foot = `<div class="s-foot">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}.</div>`;
+  const head = (eb, t) => `<div><div class="s-eyebrow">${esc(eb)}</div><h2>${esc(t)}</h2></div>`;
+  const sl = [];
+  sl.push(`<div class="slide cover"><div class="cv-img" style="background-image:url(${snap})"></div><div class="cv-txt"><div class="s-eyebrow">${esc(m.cargo)} · ${m.anio}</div><h1>${esc(name)}</h1>${w ? `<div class="big-win">Ganó <b>${esc(who || candLabel(w.c))}</b>${who ? ' · ' + esc(shortCand(w.c)) : ''} con ${p1(w.share)}</div>` : ''}</div></div>`);
+  if (a.t) sl.push(`<div class="slide">${head(name, 'Datos generales')}<div class="s-body"><div class="kpis"><div class="kpi"><div class="v">${a.ln ? fmt(a.ln) : '—'}</div><div class="k">Lista nominal ${m.anio}</div></div><div class="kpi"><div class="v">${fmt(a.t)}</div><div class="k">Votos emitidos</div></div><div class="kpi"><div class="v">${a.ln ? p1(pct(a.t, a.ln)) : '—'}</div><div class="k">Participación</div></div><div class="kpi"><div class="v">${w ? w.margin.toFixed(1) + ' pts' : '—'}</div><div class="k">Ventaja del primer lugar</div></div></div>
+    ${P ? `<div class="two"><div class="kpis" style="grid-template-columns:1fr 1fr"><div class="kpi"><div class="v">${fmt(P[1])}</div><div class="k">Lista nominal hoy</div></div><div class="kpi"><div class="v">${p1(pct(P[3], P[1]))}</div><div class="k">Mujeres en la lista</div></div></div>${pyramid(P)}</div>` : ''}</div>${foot}</div>`);
+  if (a.t) sl.push(`<div class="slide">${head(name + ' · ' + m.anio, 'Resultados por candidatura')}<div class="s-body">${bars(S.el, a, u, key, 'cand')}</div>${foot}</div>`);
+  if (a.t) sl.push(`<div class="slide">${head(name + ' · ' + m.anio, 'Votos por partido')}<div class="s-body">${columns(S.el, a, 1160, 440)}</div>${foot}</div>`);
+  if (cm) sl.push(`<div class="slide">${head(name, `Comparación ${cm.c.anio} y ${m.anio}`)}<div class="s-body">${cm.html}</div>${foot}</div>`);
+  const tr = trend(u, key, 1160, 430); if (tr) sl.push(`<div class="slide">${head(name, cargoBase(m.cargo) + ' · cómo ha cambiado')}<div class="s-body">${tr}</div>${foot}</div>`);
+  if (EST._afi && (u === 'mun' || u === 'est')) sl.push(`<div class="slide">${head('Estado de Puebla', 'Afiliados a partidos')}<div class="s-body">${afiliados()}</div><div class="s-foot">${esc(CAT.afiliados.fuente)}.</div></div>`);
+  const D = $('#deck'), ST = $('#deck-stage'); ST.innerHTML = sl.join(''); D.hidden = false; DECK = 0;
+  const slides = [...ST.querySelectorAll('.slide')];
+  const fitS = () => { const r = ST.getBoundingClientRect(), k = Math.min((r.width - 24) / 1280, (r.height - 24) / 720); slides.forEach(s => s.style.transform = `translate(-50%,-50%) scale(${k})`); };
+  const go = i => { DECK = Math.max(0, Math.min(slides.length - 1, i)); slides.forEach((s, j) => s.classList.toggle('on', j === DECK)); $('#deck-n').textContent = `${DECK + 1} / ${slides.length}`; animate(slides[DECK]); };
+  fitS(); go(0);
+  $('#deck-prev').onclick = () => go(DECK - 1); $('#deck-next').onclick = () => go(DECK + 1);
+  if (DECK_KEY) window.removeEventListener('keydown', DECK_KEY); if (DECK_FIT) window.removeEventListener('resize', DECK_FIT);
+  DECK_KEY = e => { if (D.hidden) return; if (e.key === 'ArrowRight' || e.key === ' ') go(DECK + 1); else if (e.key === 'ArrowLeft') go(DECK - 1); else if (e.key === 'Escape') D.hidden = true; };
+  DECK_FIT = fitS; window.addEventListener('keydown', DECK_KEY); window.addEventListener('resize', fitS);
+  $('#deck-x').onclick = () => { D.hidden = true; };
+  $('#deck-pdf').onclick = () => { slides.forEach(s => s.querySelectorAll('[data-w]').forEach(el => el.style.width = el.dataset.w + '%')); window.print(); };
+  let x0 = null; ST.ontouchstart = e => x0 = e.touches[0].clientX; ST.ontouchend = e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) go(DECK + (dx < 0 ? 1 : -1)); x0 = null; };
 }
 
 /* =================== NAVEGACIÓN =================== */
 const keyOf = (u, k) => u === 'ja' ? k : Number(k);
-function select(key) {
-  S.sel = key;
-  const v = VISTAS.find(x => x.k === S.vista);
+function select(sel) {
+  S.sel = sel;
+  const v = VK(S.vista), on = sel && sel.u === S.vista;
   if (map.getLayer('sel')) map.removeLayer('sel');
-  map.addLayer({ id: 'sel', type: 'line', source: 'g-' + v.geo, paint: { 'line-color': cssVar('--fg'), 'line-width': 3.2 }, filter: ['==', ['get', v.id], key == null ? '__none__' : key] });
-  renderPanel();
-  if (key != null && isMobile()) $('#panel').dataset.state = 'open';
+  map.addLayer({ id: 'sel', type: 'line', source: 'g-' + v.geo, paint: { 'line-color': cssVar('--fg'), 'line-width': 3.2 }, filter: ['==', ['get', v.id], on ? sel.key : '__none__'] });
+  highlight(); renderPanel();
+  if (sel && isMobile()) $('#panel').dataset.state = 'open';
 }
-function geomOf(u, key) { const v = VISTAS.find(x => x.k === u); const f = GEO[v.geo].features.find(f => f.properties[v.id] === key); return f && f.geometry; }
-function goTo(u, k) { const key = keyOf(u, k); if (S.vista !== u) setVista(u, true); select(key); const g = geomOf(u, key); if (g) fit(g); }
-function bbox(geom) {
-  let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
-  const walk = c => { if (typeof c[0] === 'number') { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); } else c.forEach(walk); };
-  walk(geom.coordinates || geom); return [[x0, y0], [x1, y1]];
-}
-function fit(geom, dur = 650) {
+function geomOf(u, key) { const v = VK(u); const f = GEO[v.geo].features.find(f => f.properties[v.id] === key); return f && f.geometry; }
+function bbox(geom) { let x0 = 180, y0 = 90, x1 = -180, y1 = -90; const walk = c => { if (typeof c[0] === 'number') { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); } else c.forEach(walk); }; walk(geom.coordinates || geom); return [[x0, y0], [x1, y1]]; }
+function fitGeom(geom, dur = 700) {
+  if (!geom) return;
   const mob = isMobile(), wide = map.getContainer().clientWidth > 900;
-  map.fitBounds(bbox(geom), { padding: { top: mob ? 80 : 30, left: wide ? 400 : 40, right: wide ? 30 : 40, bottom: mob ? window.innerHeight * 0.3 : 30 }, maxZoom: 15.5, duration: dur });
+  map.fitBounds(bbox(geom), { padding: { top: mob ? 90 : 40, left: wide ? 340 : 40, right: 40, bottom: mob ? window.innerHeight * 0.3 : 40 }, maxZoom: 15.5, duration: dur });
 }
-function fitFocus(dur) { const F = focus(); const g = geomOf(F.u, F.key); if (g) fit(g, dur); }
+function focusMun(k) { S.foco = { u: 'mun', key: k }; syncVistaAvail(); hero(); }
+function goTo(u, k) {
+  const key = keyOf(u, k);
+  if (u === 'mun') { focusMun(key); if (VK(S.vista).det && !DETOK.includes(key)) setVista('mun', true); select({ u: 'mun', key }); fitGeom(geomOf('mun', key)); return; }
+  if (u === 'dl' || u === 'df') { if (S.vista !== u) setVista(u, true); select({ u, key }); fitGeom(geomOf(u, key)); return; }
+  const m = munOfUnit(u, key); if (m != null) focusMun(m);
+  if (S.vista !== u) setVista(u, true);
+  select({ u, key }); fitGeom(geomOf(u, key));
+}
+function goHome() { S.foco = { u: HOME.u, key: HOME.key }; S.sel = null; setVista(HOME.vista, true); select(null); fitGeom(geomOf(HOME.u, HOME.key)); }
 function setVista(k, keepSel) {
   S.vista = k; if (!keepSel) S.sel = null;
-  const v = VISTAS.find(x => x.k === k);
-  for (const x of VISTAS) {
-    const on = x.k === k && (x.k !== 'mun');
-    if (x.k === 'mun') continue;
-    for (const p of ['f-', 'l-', 't-']) if (map.getLayer(p + x.geo)) map.setLayoutProperty(p + x.geo, 'visibility', on ? 'visible' : 'none');
-  }
-  // municipios: llenos en vista municipio; tenues como contexto en las demás
-  const ctx = v.det ? 0.42 : (k === 'mun' ? 0.93 : 0.18);
-  map.setPaintProperty('f-municipios', 'fill-opacity', ['case', ['boolean', ['feature-state', 'h'], false], Math.min(ctx + .15, 1), ctx]);
+  for (const x of VISTAS) { if (x.k === 'mun') continue; const on = x.k === k; for (const p of ['f-', 'l-', 't-']) if (map.getLayer(p + x.geo)) map.setLayoutProperty(p + x.geo, 'visibility', on ? 'visible' : 'none'); }
   map.setLayoutProperty('f-municipios', 'visibility', CAPAS.estado || k === 'mun' ? 'visible' : 'none');
   $$('#vistas button').forEach(b => b.classList.toggle('on', b.dataset.v === k));
+  syncVistaAvail();
   paint(); labels();
-  if (!keepSel) select(null);
+  if (!keepSel) select(null); else select(S.sel);
+}
+function syncVistaAvail() {
+  const m = S.foco.u === 'mun' ? S.foco.key : null;
+  $$('#vistas button').forEach(b => { const v = b.dataset.v; b.disabled = (v === 'ja' && !(m === 115 && DETOK.includes(115))) || (v === 'col' && !(m != null && CAT.detalle.includes(m) && DETOK.includes(m))) || (v === 'sec' && !DETOK.length); });
 }
 function setEl(eid) {
-  const prev = S.modo; S.el = eid;
-  if (prev !== 'win' && prev !== 'part') S.modo = ELS[eid].cand.find(c => c.split('-')[0] === prev.split('-')[0]) || 'win';
+  const prev = S.modo; S.el = eid; S.cmp = null;
+  if (!['win', 'part', 'cambio'].includes(prev)) S.modo = ELS[eid].cand.find(c => leadOf(c) === leadOf(prev)) || 'win';
   syncElControls(); fillModo(); paint();
 }
 
@@ -362,47 +458,41 @@ function setEl(eid) {
 function syncElControls() {
   const m = ELS[S.el], cargo = cargoBase(m.cargo);
   $('#cargo').value = cargo;
-  const years = CAT.elecciones.filter(e => cargoBase(e.cargo) === cargo);
-  $('#anios').innerHTML = years.map(e => `<button data-el="${e.id}" class="${e.id === S.el ? 'on' : ''}" title="${esc(e.cargo)} ${e.anio}">${e.anio}${e.cargo.includes('extra') ? '*' : ''}</button>`).join('');
+  $('#anios').innerHTML = CAT.elecciones.filter(e => cargoBase(e.cargo) === cargo).map(e => `<button data-el="${e.id}" class="${e.id === S.el ? 'on' : ''}" title="${esc(e.cargo)} ${e.anio}">${e.anio}${e.cargo.includes('extra') ? '*' : ''}</button>`).join('');
   $$('#anios button').forEach(b => b.onclick = () => setEl(b.dataset.el));
   const on = $('#anios .on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function fillModo() {
-  const m = ELS[S.el], tops = m.cand.filter(c => !c.startsWith('CAND_IND')).slice(0, 6);
-  $('#modo').innerHTML = `<option value="win">Quién ganó</option><option value="part">Participación</option><optgroup label="Votación de…">${tops.map(c => `<option value="${c}">${esc(candLabel(c))}</option>`).join('')}</optgroup>`;
-  if (!['win', 'part', ...tops].includes(S.modo)) S.modo = 'win';
+  const m = ELS[S.el], tops = m.cand.filter(c => !c.startsWith('CAND_IND')).slice(0, 6), p = prevOf(S.el);
+  $('#modo').innerHTML = `<option value="win">Quién ganó</option><option value="part">Participación</option>${p ? `<option value="cambio">Cambio de ganador vs ${p.anio}</option>` : ''}<optgroup label="Votación de…">${tops.map(c => `<option value="${c}">${esc(candLabel(c))}</option>`).join('')}</optgroup>`;
+  if (!['win', 'part', ...(p ? ['cambio'] : []), ...tops].includes(S.modo)) S.modo = 'win';
   $('#modo').value = S.modo;
 }
 function buildControls() {
   $('#cargo').innerHTML = CARGOS.map(c => `<option>${c}</option>`).join('');
   $('#cargo').onchange = e => { const last = CAT.elecciones.filter(x => cargoBase(x.cargo) === e.target.value && !x.cargo.includes('extra')).sort((a, b) => b.anio - a.anio)[0]; setEl(last.id); };
-  const vis = VISTAS.filter(v => !v.det || (v.k === 'ja' ? DETOK.includes(115) : DETOK.length));
-  $('#vistas').innerHTML = vis.map(v => `<button data-v="${v.k}" class="${v.k === S.vista ? 'on' : ''}">${v.l}</button>`).join('');
-  $$('#vistas button').forEach(b => b.onclick = () => setVista(b.dataset.v));
+  $('#vistas').innerHTML = VISTAS.map(v => `<button data-v="${v.k}" class="${v.k === S.vista ? 'on' : ''}">${v.l}</button>`).join('');
+  $$('#vistas button').forEach(b => b.onclick = () => { const k = b.dataset.v; setVista(k); if (VK(k).det) fitGeom(geomOf(S.foco.u, S.foco.key)); });
   $('#modo').onchange = e => { S.modo = e.target.value; paint(); };
   syncElControls(); fillModo();
-  // capas
   const C = $('#capas'), btn = $('#btn-capas');
-  C.innerHTML = `<div class="grp"><h4>Ir a</h4><div class="chips"><button class="chip" data-fly="foco">${esc(focus().name)}</button><button class="chip" data-fly="zm">Zona metropolitana</button><button class="chip" data-fly="est">Todo el estado</button></div></div>
+  C.innerHTML = `<div class="grp"><h4>Ir a</h4><div class="chips"><button class="chip" data-fly="foco">${esc(unitName(HOME.u, HOME.key))}</button><button class="chip" data-fly="zm">Zona metropolitana</button><button class="chip" data-fly="est">Todo el estado</button></div></div>
     <div class="grp"><h4>Capas</h4>${CAPAS_DEF.map(([k, l, , sw]) => `<label class="tg"><input type="checkbox" data-capa="${k}" ${CAPAS[k] ? 'checked' : ''}>${l}${sw ? `<span class="sw-line ${sw === 'solid' ? '' : 'dash'}" style="border-color:${sw === 'solid' ? 'var(--oro)' : sw === 'dash' ? 'var(--oro-d)' : sw === 'dash2' ? '#2B6E8F' : '#6B3F8F'}"></span>` : ''}</label>`).join('')}</div>`;
   btn.onclick = () => { const o = C.hidden; C.hidden = !o; btn.setAttribute('aria-expanded', String(o)); };
   $$('[data-capa]').forEach(i => i.onchange = () => { CAPAS[i.dataset.capa] = i.checked; store.set('pe_capas', CAPAS); applyCapas(); });
-  $$('[data-fly]').forEach(b => b.onclick = () => { const t = b.dataset.fly; if (t === 'foco') fitFocus(); else if (t === 'zm') fit(GEO.zm.features[0].geometry); else fit(GEO.estado_bbox); if (isMobile()) { C.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
+  $$('[data-fly]').forEach(b => b.onclick = () => { const t = b.dataset.fly; if (t === 'foco') goHome(); else if (t === 'zm') fitGeom(GEO.zm.features[0].geometry); else fitGeom(GEO.estado_bbox); if (isMobile()) { C.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
   $('#who').innerHTML = `<b>${esc(PERFIL.nombre)}</b> · ${esc(PERFIL.nivel_n)}${PERFIL.ambito ? ' ' + esc(PERFIL.ambito) : ''}`;
   $('#btn-out').onclick = () => { sess.del('pe_s'); location.reload(); };
   if (MB.admin) { $('#btn-users').hidden = false; $('#btn-users').onclick = showUsers; }
-}
-function showUsers() {
-  const U = MB.admin.usuarios;
-  $('#mbody').innerHTML = `<h3 id="mtitle">Usuarios</h3><p class="src">Se administran en el Excel de usuarios; al correr <code>pipeline/acceso.py</code> se vuelven a cifrar los accesos.</p><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Nivel</th><th>Ámbito</th></tr></thead><tbody>${U.map(u => `<tr><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${esc(u.nivel)}</td><td>${esc(u.ambito || 'Todo')}</td></tr>`).join('')}</tbody></table>`;
-  $('#modal').hidden = false; $('#mclose').onclick = () => $('#modal').hidden = true;
+  $('#home-l').textContent = 'Volver a ' + unitName(HOME.u, HOME.key);
+  $('#btn-home').onclick = goHome;
+  window.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#deck').hidden) { if (!$('#modal').hidden) $('#modal').hidden = true; else if (S.sel) select(null); } });
 }
 function applyCapas() {
   const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); };
   vis('f-municipios', CAPAS.estado || S.vista === 'mun'); vis('l-municipios', CAPAS.estado || S.vista === 'mun');
   vis('zm-l', CAPAS.zm); vis('det-l', CAPAS.conurb); vis('cap-l', CAPAS.conurb); vis('cap-glow', CAPAS.conurb);
-  vis('dl-o', CAPAS.dl); vis('df-o', CAPAS.df);
-  vis('carr', CAPAS.carr); vis('carr-a', CAPAS.carr);
+  vis('dl-o', CAPAS.dl); vis('df-o', CAPAS.df); vis('carr', CAPAS.carr); vis('carr-a', CAPAS.carr);
   for (const id of ['via', 'rio', 'lago', 'calles']) vis(id, CAPAS.calles);
   labels();
 }
@@ -410,7 +500,7 @@ function applyCapas() {
 /* =================== BÚSQUEDA =================== */
 let SEARCH = [];
 function buildSearch() {
-  for (const m of CAT.municipios) SEARCH.push({ t: m.n, s: norm(m.n), k: 'mun', id: m.id, h: m.id === 115 ? 'Capital' : m.det ? 'Conurbado' : 'Municipio' });
+  for (const m of CAT.municipios) SEARCH.push({ t: m.n, s: norm(m.n), k: 'mun', id: m.id, h: m.id === 115 ? 'Capital' : m.det ? 'Conurbado' : m.zm ? 'Zona metropolitana' : 'Municipio' });
   for (const f of GEO.secciones.features) SEARCH.push({ t: 'Sección ' + f.properties.seccion, s: String(f.properties.seccion), k: 'sec', id: f.properties.seccion, h: MUNN[f.properties.municipio] });
   for (const f of GEO.colonias.features) SEARCH.push({ t: f.properties.nombre, s: norm(f.properties.nombre) + ' ' + f.properties.cp, k: 'col', id: f.properties.cid, h: MUNN[f.properties.municipio] + ' · CP ' + f.properties.cp });
   for (const f of GEO.juntas.features) SEARCH.push({ t: f.properties.ja, s: norm(f.properties.ja), k: 'ja', id: f.properties.ja, h: 'Junta auxiliar' });
@@ -419,60 +509,42 @@ function buildSearch() {
   const q = $('#q'), ul = $('#qres'); let hits = [], on = 0;
   const show = () => { ul.innerHTML = hits.map((x, i) => `<li><button data-i="${i}" class="${i === on ? 'on' : ''}"><span>${esc(x.t)}</span><small>${esc(x.h || '')}</small></button></li>`).join(''); ul.hidden = !hits.length; ul.querySelectorAll('button').forEach(b => b.onmousedown = e => { e.preventDefault(); pick(hits[+b.dataset.i]); }); };
   const pick = x => { ul.hidden = true; q.value = ''; q.blur(); goTo(x.k, x.id); };
-  q.oninput = () => {
-    const v = norm(q.value.trim()); if (!v) { hits = []; show(); return; }
-    const isNum = /^\d+$/.test(v);
-    hits = SEARCH.filter(x => isNum ? (x.k === 'sec' ? x.s.startsWith(v) : x.s.includes(v)) : x.s.includes(v)).sort((a, b) => (a.s.startsWith(v) ? 0 : 1) - (b.s.startsWith(v) ? 0 : 1) || (a.k === 'mun' ? -1 : 0) - (b.k === 'mun' ? -1 : 0) || a.t.length - b.t.length).slice(0, 12);
-    on = 0; show();
-  };
+  q.oninput = () => { const v = norm(q.value.trim()); if (!v) { hits = []; show(); return; } const isNum = /^\d+$/.test(v);
+    hits = SEARCH.filter(x => isNum ? (x.k === 'sec' ? x.s.startsWith(v) : x.s.includes(v)) : x.s.includes(v)).sort((a, b) => (a.s.startsWith(v) ? 0 : 1) - (b.s.startsWith(v) ? 0 : 1) || (a.k === 'mun' ? -1 : 0) - (b.k === 'mun' ? -1 : 0) || a.t.length - b.t.length).slice(0, 12); on = 0; show(); };
   q.onkeydown = e => { if (e.key === 'ArrowDown') { on = Math.min(on + 1, hits.length - 1); show(); e.preventDefault(); } else if (e.key === 'ArrowUp') { on = Math.max(on - 1, 0); show(); e.preventDefault(); } else if (e.key === 'Enter' && hits[on]) pick(hits[on]); else if (e.key === 'Escape') ul.hidden = true; };
   q.onblur = () => setTimeout(() => ul.hidden = true, 120);
 }
 
-/* =================== HOJA INFERIOR =================== */
+/* =================== HOJA INFERIOR (CELULAR) =================== */
 const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
-function peekSize() {
-  if (!isMobile()) return;
-  const P = $('#panel'), ph = P.querySelector('.ph'), w = P.querySelector('.win');
-  let hgt = 22 + (ph ? ph.offsetHeight : 60) + 8; if (w) hgt += w.offsetHeight + 14;
-  document.documentElement.style.setProperty('--peek', Math.min(hgt, 230) + 'px');
-}
+function peekSize() { if (!isMobile()) return; const P = $('#panel'), ph = P.querySelector('.ph'), w = P.querySelector('.win'); let hgt = 22 + (ph ? ph.offsetHeight : 60) + 8; if (w) hgt += w.offsetHeight + 14; document.documentElement.style.setProperty('--peek', Math.min(hgt, 240) + 'px'); }
 function sheet() {
-  const P = $('#panel'), g = $('#grip');
-  g.onclick = () => { P.dataset.state = P.dataset.state === 'open' ? 'peek' : 'open'; };
-  let y0 = null;
-  g.addEventListener('pointerdown', e => { y0 = e.clientY; });
+  const P = $('#panel'), g = $('#grip'); g.onclick = () => { P.dataset.state = P.dataset.state === 'open' ? 'peek' : 'open'; };
+  let y0 = null; g.addEventListener('pointerdown', e => { y0 = e.clientY; });
   window.addEventListener('pointerup', e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null; if (Math.abs(dy) > 30) P.dataset.state = dy < 0 ? 'open' : 'peek'; });
-  P.querySelector('.pbody').addEventListener('click', e => { if (isMobile() && P.dataset.state === 'peek' && !e.target.closest('button')) P.dataset.state = 'open'; });
+  P.querySelector('.pbody').addEventListener('click', e => { if (isMobile() && P.dataset.state === 'peek' && !e.target.closest('button,select')) P.dataset.state = 'open'; });
   window.addEventListener('resize', peekSize);
 }
 
 /* =================== MAPA =================== */
 let LABELS = [];
-function centroid(geom) {
-  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates; let best = null, ba = -1;
-  for (const p of polys) { const r = p[0]; let a = 0, cx = 0, cy = 0;
-    for (let i = 0, k = r.length - 1; i < r.length; k = i++) { const f = r[k][0] * r[i][1] - r[i][0] * r[k][1]; a += f; cx += (r[k][0] + r[i][0]) * f; cy += (r[k][1] + r[i][1]) * f; }
-    if (Math.abs(a) > ba) { ba = Math.abs(a); best = [cx / (3 * a), cy / (3 * a)]; } }
-  return { c: best, a: ba };
-}
+function centroid(geom) { const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates; let best = null, ba = -1;
+  for (const p of polys) { const r = p[0]; let a = 0, cx = 0, cy = 0; for (let i = 0, k = r.length - 1; i < r.length; k = i++) { const f = r[k][0] * r[i][1] - r[i][0] * r[k][1]; a += f; cx += (r[k][0] + r[i][0]) * f; cy += (r[k][1] + r[i][1]) * f; } if (Math.abs(a) > ba) { ba = Math.abs(a); best = [cx / (3 * a), cy / (3 * a)]; } }
+  return { c: best, a: ba }; }
 function labels() {
   LABELS.forEach(L => L.m.remove()); LABELS = [];
   const add = (c, text, cls, a) => { const el = document.createElement('div'); el.className = 'mlabel ' + cls; el.textContent = text; LABELS.push({ m: new maplibregl.Marker({ element: el }).setLngLat(c).addTo(map), a, el }); };
   if (S.vista === 'ja') for (const f of GEO.juntas.features) { const { c, a } = centroid(f.geometry); add(c, f.properties.ja, '', a); }
   const dist = S.vista === 'dl' || S.vista === 'df' ? S.vista : (CAPAS.dl ? 'dl' : CAPAS.df ? 'df' : null);
   if (dist) for (const f of GEO[dist].features) { const k = f.properties[dist === 'dl' ? 'distrito_l' : 'distrito_f']; const { c, a } = centroid(f.geometry); add(c, (dist === 'dl' ? 'DL ' : 'DF ') + k, 'big dist', a + 1); }
-  if (S.vista !== 'ja') for (const f of GEO.municipios.features) { const p = f.properties; if (!(p.det || S.vista === 'mun')) continue; const { c, a } = centroid(f.geometry); add(c, p.municipio === 115 ? 'Puebla' : p.nombre, p.det ? 'big' : '', a + (p.det ? 1 : 0)); }
+  if (S.vista !== 'ja') for (const f of GEO.municipios.features) { const p = f.properties; const { c, a } = centroid(f.geometry); add(c, p.municipio === 115 ? 'Puebla' : p.nombre, p.det ? 'big' : '', a + (p.municipio === 115 ? 3 : p.det ? 1 : 0)); }
   LABELS.sort((x, y) => y.a - x.a); declutter();
 }
 function declutter() {
   const placed = [], z = map.getZoom();
-  for (const L of LABELS) {
-    const el = L.el; el.style.visibility = 'visible';
-    const r = el.getBoundingClientRect(), pad = 4;
-    if (r.width === 0 || placed.some(p => r.left < p.right + pad && r.right > p.left - pad && r.top < p.bottom + pad && r.bottom > p.top - pad)) el.style.visibility = 'hidden';
-    else placed.push(r);
-  }
+  for (const L of LABELS) { const el = L.el; el.style.visibility = 'visible';
+    const small = !el.classList.contains('big') && z < 9.6, r = el.getBoundingClientRect(), pad = 6;
+    if (small || r.width === 0 || placed.some(p => r.left < p.right + pad && r.right > p.left - pad && r.top < p.bottom + pad && r.bottom > p.top - pad)) el.style.visibility = 'hidden'; else placed.push(r); }
 }
 let streetsP = null;
 function loadStreets() {
@@ -484,59 +556,64 @@ function loadStreets() {
   }).catch(() => { streetsP = null; });
 }
 function initMap() {
-  map = new maplibregl.Map({ container: 'map', attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
-    style: { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': cssVar('--mapbg') } }] },
-    center: [-98.2, 19.04], zoom: 10, minZoom: 6.5, maxZoom: 17 });
+  map = new maplibregl.Map({ container: 'map', attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, preserveDrawingBuffer: true,
+    style: { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': cssVar('--mapbg') } }] }, center: [-98.2, 19.04], zoom: 10, minZoom: 6.5, maxZoom: 17 });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
   map.touchZoomRotate.disableRotation();
   return new Promise(r => map.on('load', r));
 }
 function addLayers() {
-  const nores = cssVar('--nores');
-  const src = (id, data, promote) => map.addSource(id, Object.assign({ type: 'geojson', data }, promote ? { promoteId: promote } : {}));
+  const nores = cssVar('--nores'), src = (id, data, promote) => map.addSource(id, Object.assign({ type: 'geojson', data }, promote ? { promoteId: promote } : {}));
   for (const v of VISTAS) src('g-' + v.geo, GEO[v.geo], v.id);
   src('g-zm', GEO.zm); src('g-carr', GEO.carreteras); src('g-ctx', GEO.contexto);
-  const fillPaint = { 'fill-color': ['coalesce', ['feature-state', 'c'], nores], 'fill-color-transition': { duration: 450 }, 'fill-opacity': ['case', ['boolean', ['feature-state', 'h'], false], .75, .93] };
-  map.addLayer({ id: 'f-municipios', type: 'fill', source: 'g-municipios', paint: { ...fillPaint } });
-  map.addLayer({ id: 'l-municipios', type: 'line', source: 'g-municipios', paint: { 'line-color': cssVar('--mapbg'), 'line-width': ['interpolate', ['linear'], ['zoom'], 7, .3, 11, 1.4] } });
+  const fillPaint = () => ({ 'fill-color': ['coalesce', ['feature-state', 'c'], nores], 'fill-color-transition': { duration: 500 }, 'fill-opacity-transition': { duration: 450 }, 'fill-opacity': .93 });
+  map.addLayer({ id: 'f-municipios', type: 'fill', source: 'g-municipios', paint: fillPaint() });
+  map.addLayer({ id: 'l-municipios', type: 'line', source: 'g-municipios', paint: { 'line-color': cssVar('--mapbg'), 'line-width': ['interpolate', ['linear'], ['zoom'], 7, .4, 11, 1.4], 'line-opacity-transition': { duration: 450 } } });
   for (const v of VISTAS.filter(v => v.k !== 'mun')) {
-    map.addLayer({ id: 'f-' + v.geo, type: 'fill', source: 'g-' + v.geo, layout: { visibility: 'none' }, paint: { ...fillPaint } });
-    map.addLayer({ id: 'l-' + v.geo, type: 'line', source: 'g-' + v.geo, layout: { visibility: 'none' }, paint: { 'line-color': cssVar('--mapbg'), 'line-width': v.det ? ['interpolate', ['linear'], ['zoom'], 10, .25, 14, 1.2] : 1.6 } });
+    map.addLayer({ id: 'f-' + v.geo, type: 'fill', source: 'g-' + v.geo, layout: { visibility: 'none' }, paint: fillPaint() });
+    map.addLayer({ id: 'l-' + v.geo, type: 'line', source: 'g-' + v.geo, layout: { visibility: 'none' }, paint: { 'line-color': cssVar('--mapbg'), 'line-width': v.det ? ['interpolate', ['linear'], ['zoom'], 9, .15, 12, .6, 15, 1.4] : 1.8, 'line-opacity-transition': { duration: 450 } } });
   }
   const cv = document.createElement('canvas'); cv.width = cv.height = 8; const cx = cv.getContext('2d');
   cx.strokeStyle = 'rgba(110,120,115,.6)'; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(0, 8); cx.lineTo(8, 0); cx.moveTo(-2, 2); cx.lineTo(2, -2); cx.moveTo(6, 10); cx.lineTo(10, 6); cx.stroke();
   map.addImage('trama', { width: 8, height: 8, data: cx.getImageData(0, 0, 8, 8).data });
-  for (const v of VISTAS.filter(v => v.det)) map.addLayer({ id: 't-' + v.geo, type: 'fill', source: 'g-' + v.geo, layout: { visibility: 'none' }, filter: ['==', ['get', v.id], '__none__'], paint: { 'fill-pattern': 'trama' } }, 'l-' + v.geo);
-  // contexto
+  for (const v of VISTAS.filter(v => v.det)) map.addLayer({ id: 't-' + v.geo, type: 'fill', source: 'g-' + v.geo, layout: { visibility: 'none' }, filter: ['==', ['get', v.id], '__none__'], paint: { 'fill-pattern': 'trama', 'fill-opacity': .7 } }, 'l-' + v.geo);
   map.addLayer({ id: 'lago', type: 'fill', source: 'g-ctx', filter: ['==', ['get', 'k'], 'lago'], paint: { 'fill-color': cssVar('--water'), 'fill-opacity': .9 } });
   map.addLayer({ id: 'rio', type: 'line', source: 'g-ctx', filter: ['==', ['get', 'k'], 'rio'], paint: { 'line-color': cssVar('--water'), 'line-width': ['interpolate', ['linear'], ['zoom'], 10, .6, 15, 2.2] } });
-  map.addLayer({ id: 'via', type: 'line', source: 'g-ctx', filter: ['==', ['get', 'k'], 'principal'], minzoom: 10.5, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .75, 'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, .4, 13, 1.6, 16, 4] } });
-  map.addLayer({ id: 'carr', type: 'line', source: 'g-carr', filter: ['==', ['get', 'k'], 'carretera'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .7, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, .5, 12, 1.8, 16, 4] } });
-  map.addLayer({ id: 'carr-a', type: 'line', source: 'g-carr', filter: ['==', ['get', 'k'], 'autopista'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .9, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, .9, 12, 2.6, 16, 6] } });
-  // territorio
+  map.addLayer({ id: 'via', type: 'line', source: 'g-ctx', filter: ['==', ['get', 'k'], 'principal'], minzoom: 11, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .7, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, .4, 13, 1.6, 16, 4] } });
+  map.addLayer({ id: 'carr', type: 'line', source: 'g-carr', filter: ['==', ['get', 'k'], 'carretera'], minzoom: 8, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .6, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, .4, 12, 1.6, 16, 4] } });
+  map.addLayer({ id: 'carr-a', type: 'line', source: 'g-carr', filter: ['==', ['get', 'k'], 'autopista'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': cssVar('--road'), 'line-opacity': .85, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, .7, 12, 2.4, 16, 6] } });
   map.addLayer({ id: 'dl-o', type: 'line', source: 'g-dl', paint: { 'line-color': '#2B6E8F', 'line-width': 2, 'line-dasharray': [3, 2] } });
   map.addLayer({ id: 'df-o', type: 'line', source: 'g-df', paint: { 'line-color': '#6B3F8F', 'line-width': 2.2, 'line-dasharray': [1, 2] } });
-  map.addLayer({ id: 'zm-l', type: 'line', source: 'g-zm', paint: { 'line-color': cssVar('--oro-d'), 'line-width': 2, 'line-dasharray': [2, 1.5] } });
-  map.addLayer({ id: 'det-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'det'], true], paint: { 'line-color': cssVar('--oro'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 13, 2.6] } });
-  map.addLayer({ id: 'cap-glow', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], paint: { 'line-color': cssVar('--oro'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 13, 14], 'line-opacity': .28, 'line-blur': 4 } });
-  map.addLayer({ id: 'cap-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], paint: { 'line-color': cssVar('--carbon'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 13, 3.4] } });
+  map.addLayer({ id: 'zm-l', type: 'line', source: 'g-zm', paint: { 'line-color': cssVar('--oro-d'), 'line-width': 1.6, 'line-dasharray': [2, 1.5], 'line-opacity': .8 } });
+  map.addLayer({ id: 'det-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'det'], true], paint: { 'line-color': cssVar('--oro'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, .8, 13, 1.8], 'line-opacity': .7 } });
+  map.addLayer({ id: 'cap-glow', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], paint: { 'line-color': cssVar('--oro'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 7, 13, 16], 'line-opacity': .35, 'line-blur': 5 } });
+  map.addLayer({ id: 'cap-l', type: 'line', source: 'g-municipios', filter: ['==', ['get', 'municipio'], 115], paint: { 'line-color': cssVar('--carbon'), 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 13, 3.6] } });
   map.on('zoomend', loadStreets); map.on('moveend', declutter);
-  // interacción
   let hov = null; const tip = $('#tip');
   const clearHov = () => { if (hov) map.setFeatureState(hov, { h: false }); hov = null; };
-  const layerOf = () => { const v = VISTAS.find(x => x.k === S.vista); return { v, id: 'f-' + v.geo }; };
-  const hit = e => { const { v, id } = layerOf(); let f = map.queryRenderedFeatures(e.point, { layers: [id] })[0]; if (f) return { v, f }; if (v.det && map.getLayoutProperty('f-municipios', 'visibility') !== 'none') { f = map.queryRenderedFeatures(e.point, { layers: ['f-municipios'] })[0]; if (f) return { v: VISTAS.find(x => x.k === 'mun'), f }; } return null; };
+  const hit = e => { const v = VK(S.vista); let f = map.queryRenderedFeatures(e.point, { layers: ['f-' + v.geo] })[0]; if (f) return { v, f };
+    if (map.getLayoutProperty('f-municipios', 'visibility') !== 'none') { f = map.queryRenderedFeatures(e.point, { layers: ['f-municipios'] })[0]; if (f) return { v: VK('mun'), f }; } return null; };
   map.on('mousemove', e => {
     const h = hit(e); if (!h) { clearHov(); tip.hidden = true; map.getCanvas().style.cursor = ''; return; }
     const { v, f } = h, id = f.properties[v.id];
     if (!hov || hov.id !== id || hov.source !== 'g-' + v.geo) { clearHov(); hov = { source: 'g-' + v.geo, id }; map.setFeatureState(hov, { h: true }); }
     map.getCanvas().style.cursor = 'pointer'; if (isMobile()) return;
-    const u = v.k === 'mun' ? MUNAGG[id] : AGG[id], w = u && u.w;
-    tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${w ? (w.tie ? 'Empate' : `${esc(candLabel(w.c))} · ${p1(w.share)}`) + (u.a.ln ? `<br><span class="m">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : '') : `<span class="m">${v.k === 'sec' ? 'Sección creada después de esta elección' : 'Sin resultados en esta elección'}</span>`}`;
+    const u = v.k === 'mun' ? MUNAGG[id] : AGG[id], w = u && u.w, mm = v.k === 'sec' ? f.properties.municipio : null;
+    tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${mm && mm !== S.foco.key ? `<span class="m">${esc(MUNN[mm])}</span><br>` : ''}${w ? (w.tie ? 'Empate' : `${esc(candLabel(w.c))} · ${p1(w.share)}`) + (u.a.ln ? `<br><span class="m">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : '') : `<span class="m">${v.k === 'sec' ? 'Sección creada después de esta elección' : 'Sin resultados en esta elección'}</span>`}`;
     tip.hidden = false; const W = map.getContainer().clientWidth; tip.style.left = Math.min(e.point.x + 14, W - 270) + 'px'; tip.style.top = (e.point.y + 14) + 'px';
   });
   map.on('mouseout', () => { clearHov(); tip.hidden = true; });
-  map.on('click', e => { const h = hit(e); if (!h) { select(null); return; } if (h.v.k !== S.vista) { goTo('mun', h.f.properties.municipio); return; } select(h.f.properties[h.v.id]); });
+  map.on('click', e => {
+    const h = hit(e); if (!h) { select(null); return; }
+    const { v, f } = h, id = f.properties[v.id];
+    if (v.det) { const mm = v.k === 'sec' ? f.properties.municipio : munOfUnit(v.k, id);
+      // primer toque en otro municipio: lo enfoca; segundo toque: abre la unidad
+      if (S.foco.u === 'mun' && mm !== S.foco.key) { focusMun(mm); select({ u: 'mun', key: mm }); fitGeom(geomOf('mun', mm)); return; }
+      select({ u: v.k, key: id }); return; }
+    if (v.k === 'mun' && S.vista !== 'mun') { focusMun(id); select({ u: 'mun', key: id }); fitGeom(geomOf('mun', id)); return; }
+    if (v.k === 'mun') focusMun(id);
+    select({ u: v.k, key: id });
+  });
 }
 function retheme() {
   if (!map) return;
@@ -549,23 +626,17 @@ function retheme() {
   paint(); select(S.sel);
 }
 
-/* =================== PANTALLA DE ENTRADA =================== */
+/* =================== ENTRADA =================== */
 async function drawLoginMap() {
   try {
     const g = await fetch('data/geo/municipios.geojson').then(r => r.json()); GEO.municipios = g;
     const cv = $('#login-map'), ctx = cv.getContext('2d'), dpr = devicePixelRatio || 1;
-    const draw = () => {
-      const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const draw = () => { const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
       const [[x0, y0], [x1, y1]] = bbox({ coordinates: g.features.map(f => f.geometry.coordinates) }), k = Math.cos(19 * Math.PI / 180);
-      const s = Math.min((W * .86) / ((x1 - x0) * k), (H * .82) / (y1 - y0)), ox = (W - (x1 - x0) * k * s) / 2, oy = (H - (y1 - y0) * s) / 2;
-      const P = (x, y) => [ox + (x - x0) * k * s, oy + (y1 - y) * s];
-      for (const f of g.features) {
-        const p = f.properties, polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+      const s = Math.min((W * .86) / ((x1 - x0) * k), (H * .82) / (y1 - y0)), ox = (W - (x1 - x0) * k * s) / 2, oy = (H - (y1 - y0) * s) / 2, P = (x, y) => [ox + (x - x0) * k * s, oy + (y1 - y) * s];
+      for (const f of g.features) { const p = f.properties, polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
         ctx.beginPath(); for (const poly of polys) for (const ring of poly) ring.forEach(([x, y], i) => { const [a, b] = P(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
-        ctx.fillStyle = p.municipio === 115 ? 'rgba(191,181,145,.95)' : p.det ? 'rgba(191,181,145,.55)' : p.zm ? 'rgba(191,181,145,.22)' : 'rgba(255,255,255,.05)';
-        ctx.fill('evenodd'); ctx.strokeStyle = 'rgba(191,181,145,.35)'; ctx.lineWidth = .6; ctx.stroke();
-      }
-    };
+        ctx.fillStyle = p.municipio === 115 ? 'rgba(191,181,145,.95)' : p.det ? 'rgba(191,181,145,.5)' : p.zm ? 'rgba(191,181,145,.2)' : 'rgba(255,255,255,.04)'; ctx.fill('evenodd'); ctx.strokeStyle = 'rgba(191,181,145,.32)'; ctx.lineWidth = .6; ctx.stroke(); } };
     draw(); window.addEventListener('resize', draw);
   } catch {}
 }
@@ -573,32 +644,28 @@ async function drawLoginMap() {
 /* =================== ARRANQUE =================== */
 async function loadPublic() {
   const j = u => fetch(u).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
-  CAT = await j('data/catalogo.json');
-  CAT.elecciones.forEach(e => ELS[e.id] = e); CAT.municipios.forEach(m => MUNN[m.id] = m.n);
-  const need = ['secciones', 'colonias', 'juntas', 'dl', 'df', 'zm', 'carreteras', 'contexto'].concat(GEO.municipios ? [] : ['municipios']);
-  await Promise.all(need.map(k => j(`data/geo/${k}.geojson`).then(g => GEO[k] = g)));
+  CAT = await j('data/catalogo.json'); CAT.elecciones.forEach(e => ELS[e.id] = e); CAT.municipios.forEach(m => MUNN[m.id] = m.n);
+  await Promise.all(['secciones', 'colonias', 'juntas', 'dl', 'df', 'zm', 'carreteras', 'contexto'].concat(GEO.municipios ? [] : ['municipios']).map(k => j(`data/geo/${k}.geojson`).then(g => GEO[k] = g)));
 }
 async function start(session) {
-  PERFIL = session.perfil;
-  $('#login').hidden = true; $('#app').hidden = false;
+  PERFIL = session.perfil; $('#login').hidden = true; $('#app').hidden = false;
   const geoP = loadPublic(), mapP = initMap();
-  const bundles = await Promise.all(Object.entries(session.keys).map(([cab, k]) => openBundle(cab, k).then(d => [cab, d])));
+  const bundles = await pool(Object.entries(session.keys), 12, ([cab, k]) => openBundle(cab, k).then(d => [cab, d]));
   await geoP;
   for (const [cab, d] of bundles) { if (cab === 'estado') EST = d; else if (cab === 'admin') MB.admin = d; else MB[+cab.slice(1)] = d; }
   DETOK = PERFIL.det.filter(m => MB[m]);
-  // solo se dibuja el detalle al que el usuario tiene acceso
   GEO.secciones.features = GEO.secciones.features.filter(f => DETOK.includes(f.properties.municipio));
   GEO.colonias.features = GEO.colonias.features.filter(f => DETOK.includes(f.properties.municipio));
   if (!DETOK.includes(115)) GEO.juntas.features = [];
   GEO.secciones.byId = {}; for (const f of GEO.secciones.features) { GEO.secciones.byId[f.properties.seccion] = f; SECMUN[f.properties.seccion] = f.properties.municipio; }
-  for (const m of DETOK) for (const eid in MB[m]) for (const s in MB[m][eid]) if (!SECMUN[s]) SECMUN[s] = m;
+  for (const m of DETOK) for (const eid in MB[m]) if (eid[0] !== '_') for (const s in MB[m][eid]) if (!SECMUN[s]) SECMUN[s] = m;
   GEO.colonias.byId = {}; for (const f of GEO.colonias.features) { GEO.colonias.byId[f.properties.cid] = f; for (const s of f.properties.secs) (COLS_OF_SEC[s] = COLS_OF_SEC[s] || []).push(f.properties.cid); }
   GEO.estado_bbox = { coordinates: GEO.municipios.features.map(f => f.geometry.coordinates) };
-  if (!DETOK.length) S.vista = 'mun';
-  if (PERFIL.nivel === 5) S.vista = DETOK.length ? 'sec' : PERFIL.ambito.slice(0, 2).toLowerCase();
+  const hf = homeFoco(); HOME = { ...hf, vista: DETOK.length ? 'sec' : (hf.u === 'mun' ? 'mun' : hf.u) };
+  S.foco = { u: hf.u, key: hf.key }; S.vista = HOME.vista;
   await mapP;
   buildControls(); addLayers(); buildSearch(); sheet();
-  setVista(S.vista); applyCapas(); fitFocus(0);
+  setVista(S.vista); applyCapas(); fitGeom(geomOf(HOME.u, HOME.key), 0);
   $('#loading').hidden = true;
   const mq = window.matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener && mq.addEventListener('change', retheme);
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -608,8 +675,7 @@ async function boot() {
   if (saved) { try { await start(saved); return; } catch (e) { console.error(e); sess.del('pe_s'); location.reload(); return; } }
   drawLoginMap();
   $('#login-form').onsubmit = async e => {
-    e.preventDefault();
-    const btn = $('#lg-btn'), err = $('#lg-err'); err.hidden = true; btn.disabled = true; btn.textContent = 'Verificando…';
+    e.preventDefault(); const btn = $('#lg-btn'), err = $('#lg-err'); err.hidden = true; btn.disabled = true; btn.textContent = 'Verificando…';
     try { const s = await login($('#lg-user').value, $('#lg-pass').value); sess.set('pe_s', s); await start(s); }
     catch (x) { console.error(x); err.textContent = x.message === 'auth' ? 'Usuario o clave incorrectos.' : 'No se pudo abrir la plataforma. Revisa tu conexión e intenta otra vez.'; err.hidden = false; $('#login').hidden = false; $('#app').hidden = true; }
     finally { btn.disabled = false; btn.textContent = 'Entrar'; }

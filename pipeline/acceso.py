@@ -2,8 +2,8 @@
 
 Excel (primera hoja, con encabezados): usuario | nombre | nivel | ambito | clave
   nivel 1  Administrador   todo, más la lista de usuarios
-  nivel 2  Estatal         todo el estado y el detalle de la zona metropolitana
-  nivel 3  Metropolitano   estado (por municipio) + detalle de Puebla capital y conurbados
+  nivel 2  Estatal         todo el estado con detalle por sección
+  nivel 3  Metropolitano   estado (por municipio) + detalle por sección de los 18 municipios de la zona metropolitana
   nivel 4  Municipal       estado (por municipio) + detalle de su municipio      ambito: clave INE del municipio (115 = Puebla)
   nivel 5  Distrital       estado (por municipio) + detalle de su distrito       ambito: DL10, DF6…
 Todos los niveles ven el resultado por municipio del estado (dato público); el detalle por sección se reparte por nivel.
@@ -24,7 +24,8 @@ b64 = lambda b: base64.b64encode(b).decode()
 def enc(key, raw): iv = secrets.token_bytes(12); return iv + AESGCM(key).encrypt(iv, raw, None)
 
 cat = json.load(open(f'{SRC}/catalogo.json'))
-DET = cat['detalle']
+DET = sorted(m['id'] for m in cat['municipios'])  # detalle por sección disponible en todos los municipios
+ZM = cat['zm']
 # qué municipios de detalle toca cada distrito
 secs = json.load(open(f'{SRC}/geo/secciones.geojson'))['features']
 DIST = {}
@@ -52,7 +53,8 @@ K['admin'] = secrets.token_bytes(32); open(f'{out}/admin.txt', 'w').write(b64(en
 sal = secrets.token_hex(16); U = {}
 for u in users:
     usr = str(u['usuario']).strip().lower(); clave = str(u['clave']); nivel = int(u['nivel']); amb = str(u.get('ambito') or '').strip().upper()
-    if nivel in (1, 2, 3): det = DET
+    if nivel in (1, 2): det = DET
+    elif nivel == 3: det = ZM
     elif nivel == 4: det = [int(amb)] if amb.isdigit() and int(amb) in DET else []
     elif nivel == 5: det = sorted(DIST.get(amb.replace(' ', ''), set()))
     else: raise SystemExit(f'nivel inválido para {usr}')
@@ -63,6 +65,6 @@ for u in users:
     U[hashlib.sha256(f'{sal}|{usr}'.encode()).hexdigest()] = {
         's': b64(s), 'p': b64(enc(kek, json.dumps(perfil, ensure_ascii=False).encode())),
         'k': {c: b64(enc(kek, K[c])) for c in cabs}}
-    print(f'  {usr:16} {NIV[nivel]:14} {amb or "-":6} → {", ".join(cabs)}')
+    print(f'  {usr:16} {NIV[nivel]:14} {amb or "-":6} → {len(det)} municipios con detalle' + (' + admin' if nivel == 1 else ''))
 json.dump({'sal': sal, 'it': IT, 'u': U}, open(f'{DATA}/acceso.json', 'w'), separators=(',', ':'))
 for f in sorted(glob.glob(f'{out}/*.txt')): print(f'  seguro/{os.path.basename(f)}: {os.path.getsize(f) // 1024} KB')

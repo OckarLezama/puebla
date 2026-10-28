@@ -12,7 +12,9 @@ Resultados electorales 2000–2024 del estado de Puebla, con Puebla capital al c
 | Resultados por sección | INE (Presidencia, Senado, Diputación federal 2000–2024) e IEE Puebla (Gubernatura, Diputación local y Ayuntamientos 2016–2024), datos abiertos |
 | Quién ganó | Registro de candidaturas ganadoras del INE y del IEE Puebla |
 
-Detalle por sección: Puebla, San Andrés Cholula, San Pedro Cholula, Cuautlancingo, Amozoc, Coronango y Ocoyucan. El resto del estado se consulta por municipio y por distrito.
+Detalle por sección en los 217 municipios. Colonias en Puebla y sus 6 conurbados; juntas auxiliares en Puebla capital.
+
+También trae la lista nominal por sección, edad y sexo (INE, corte 8-oct-2026) y los afiliados por partido en el estado (INE, verificación 2026; solo total estatal), comparación entre elecciones y un modo de presentación horizontal que se guarda en PDF.
 
 ## Acceso
 
@@ -22,7 +24,7 @@ Los resultados se guardan cifrados (`data/seguro/*.txt`, AES-256-GCM). Cada usua
 |---|---|
 | 1 Administrador | Todo, más la lista de usuarios |
 | 2 Estatal | Todo |
-| 3 Metropolitano | Estado por municipio + detalle de Puebla y los 6 conurbados |
+| 3 Metropolitano | Estado por municipio + detalle de los 18 municipios de la zona metropolitana |
 | 4 Municipal | Estado por municipio + detalle de su municipio (ámbito: clave INE, 115 = Puebla) |
 | 5 Distrital | Estado por municipio + detalle de su distrito (ámbito: DL10, DF6…) |
 
@@ -31,7 +33,7 @@ Los usuarios se administran en un Excel (`usuario | nombre | nivel | ambito | cl
 ## Actualizar datos o usuarios
 
 ```
-python pipeline/construir.py "<BGD 21 PUEBLA>" "<doc.kml del PILOTO 5>" "<carpeta con *_SEC.csv y ganadores_pue.csv>" <salida>
+python pipeline/construir.py "<BGD 21 PUEBLA>" "<doc.kml del PILOTO 5>" "<carpeta con *_SEC.csv y ganadores_pue.csv>" <salida> padron_pue.json afiliados_conteos.json
 python pipeline/acceso.py usuarios.xlsx <salida> data
 ```
 Copiar `<salida>/geo` y `<salida>/catalogo.json` a `data/`. Para agregar una elección nueva basta con sumarla a la lista `EL` de `construir.py`.

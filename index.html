@@ -5,7 +5,7 @@
 <title>Puebla Electoral</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Resultados electorales 2000–2024 del estado de Puebla con detalle de Puebla capital y su zona conurbada.">
+<meta name="description" content="Resultados electorales 2000–2024 del estado de Puebla por sección, con Puebla capital al centro, padrón y presentación.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap">
@@ -75,6 +75,7 @@
   <main class="stage">
     <div id="map" aria-label="Mapa del estado de Puebla"></div>
     <section class="hero" id="hero" aria-live="polite"></section>
+    <button class="home-btn" id="btn-home" hidden><svg viewBox="0 0 24 24"><path d="M12 3 2 11h3v9h6v-6h2v6h6v-9h3z"/></svg><span id="home-l">Volver a Puebla capital</span></button>
     <div class="capas" id="capas" hidden></div>
     <div class="legend" id="legend"></div>
     <div class="tip" id="tip" hidden></div>
@@ -87,7 +88,13 @@
   </aside>
 </div>
 
-<div class="modal" id="modal" hidden><div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mtitle"><div id="mbody"></div><button class="ghost close" id="mclose">Cerrar</button></div></div>
+<div class="modal" id="modal" hidden><div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mtitle"><button class="mx" id="mclose" aria-label="Cerrar">×</button><div id="mbody"></div></div></div>
+
+<div class="deck" id="deck" hidden>
+  <div class="deck-bar"><span id="deck-n"></span><div><button class="ghost" id="deck-pdf">Guardar PDF</button><button class="ghost" id="deck-x">Cerrar</button></div></div>
+  <div class="deck-stage" id="deck-stage"></div>
+  <button class="deck-nav prev" id="deck-prev" aria-label="Anterior">‹</button><button class="deck-nav next" id="deck-next" aria-label="Siguiente">›</button>
+</div>
 
 <script src="vendor/maplibre-gl.js"></script>
 <script src="app.js"></script>

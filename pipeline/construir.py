@@ -24,6 +24,8 @@ import xml.etree.ElementTree as ET
 warnings.filterwarnings('ignore')
 
 BGD, KML, RES, OUT = sys.argv[1:5]
+PADRON = sys.argv[5] if len(sys.argv) > 5 else None      # padron_pue.json (filas de Puebla del padrón por sección)
+AFILIADOS = sys.argv[6] if len(sys.argv) > 6 else None   # afiliados_conteos.json (totales por entidad)
 os.makedirs(f'{OUT}/geo', exist_ok=True); os.makedirs(f'{OUT}/_claro', exist_ok=True)
 CAPITAL = 115
 DETALLE = [115, 120, 141, 42, 15, 35, 107]  # capital y conurbados (INE)
@@ -100,7 +102,12 @@ col['nombre'] = col.nombre.map(titulo); col['cp'] = col.cp.fillna(0).astype(int)
 save(mun, 'municipios', 35)
 save(dl, 'dl', 35); save(df, 'df', 35)
 save(mun[mun.zm].dissolve()[['geometry']].assign(n='Zona metropolitana'), 'zm', 25)
-save(secd[['seccion', 'municipio', 'distrito_l', 'distrito_f', 'ja', 'geometry']], 'secciones', 6)
+secall = sec.copy(); secall['ja'] = secall.seccion.map(JA).fillna('')
+# tolerancia según importancia: zona de detalle fina, zona metropolitana media, resto del estado gruesa
+zmids = set(mun[mun.zm].municipio)
+tol = secall.municipio.map(lambda m: 7 if m in DETALLE else (25 if m in zmids else 70))
+secall['geometry'] = [g.simplify(t, preserve_topology=True) for g, t in zip(secall.geometry, tol)]
+save(secall[['seccion', 'municipio', 'distrito_l', 'distrito_f', 'ja', 'geometry']], 'secciones', 0.1)
 save(col[['cid', 'nombre', 'cp', 'municipio', 'ja', 'secs', 'geometry']], 'colonias', 6)
 save(secd[secd.municipio == CAPITAL][['ja', 'geometry']].dissolve(by='ja').reset_index(), 'juntas', 8)
 
@@ -182,7 +189,7 @@ NAC = {2000: ('VICENTE FOX QUESADA', 'PAN-PVEM'), 2006: ('FELIPE CALDERÓN HINOJ
 GOB16 = ('JOSÉ ANTONIO GALI FAYAD', 'PAN-PT-NA-PCPP-PSI')
 nombre = lambda s: ' '.join(w.capitalize() if len(w) > 2 or i == 0 else w.lower() for i, w in enumerate(str(s).split()))
 
-estado = {}; secb = {m: {} for m in DETALLE}; cat = []
+estado = {}; secb = {int(m): {} for m in mun.municipio}; cat = []
 for fn, eid, anio, cargo, unidad, fuente in EL:
     rows = list(csv.reader(open(f'{RES}/{fn}.csv', encoding='utf-8-sig')))
     h = [clean(c) for c in rows[0]]; raw = [c.strip().lstrip('﻿') for c in rows[0]]
@@ -297,10 +304,51 @@ for fn, eid, anio, cargo, unidad, fuente in EL:
     w = max(range(len(CAND)), key=lambda i: E['est'][4][i])
     print(f'  {eid:9} secciones {len(S):5} · municipios {len(byM):3} · ganó en el estado {CAND[w]:22} · cobertura distritos {cov:.0%} · ganadores {len(gan)}')
 
+# ======================= PADRÓN Y AFILIADOS =======================
+GR = ['18_19', '20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_Y_MAS']
+pad_meta = None
+if PADRON:
+    P = json.load(open(PADRON)); h = [str(c).replace('\n', ' ').strip().upper() for c in P['h']]; ix = {c: i for i, c in enumerate(h)}
+    def g(r, c): v = r[ix[c]] if c in ix else 0; return int(float(v)) if str(v).strip() not in ('', 'None') else 0
+    def lpack(r):
+        H = [g(r, f'LISTA_{a}_HOMBRES') + (g(r, 'LISTA_19_HOMBRES') if a == '18_19' else 0) for a in GR]
+        M = [g(r, f'LISTA_{a}_MUJERES') + (g(r, 'LISTA_19_MUJERES') if a == '18_19' else 0) for a in GR]
+        H[0] = g(r, 'LISTA_18_HOMBRES') + g(r, 'LISTA_19_HOMBRES'); M[0] = g(r, 'LISTA_18_MUJERES') + g(r, 'LISTA_19_MUJERES')
+        return [g(r, 'PADRON ELECTORAL'), g(r, 'LISTA NOMINAL'), g(r, 'LISTA HOMBRES'), g(r, 'LISTA MUJERES'), g(r, 'LISTA NO BINARIO'), H, M]
+    def addp(a, b):
+        if a is None: return [b[0], b[1], b[2], b[3], b[4], b[5][:], b[6][:]]
+        for i in range(5): a[i] += b[i]
+        for k in (5, 6):
+            for i in range(len(GR)): a[k][i] += b[k][i]
+        return a
+    PM, PL, PF, PE = {}, {}, {}, None
+    for r in P['rows']:
+        s = g(r, 'SECCION')
+        if s == 0: continue
+        p = lpack(r); m = g(r, 'CLAVE MUNICIPIO')
+        PM[m] = addp(PM.get(m), p); PE = addp(PE, p)
+        if s in SEC_ALL:
+            _, l, f_ = SEC_ALL[s]; PL[l] = addp(PL.get(l), p); PF[f_] = addp(PF.get(f_), p)
+            mm = SEC_ALL[s][0]
+            if mm in secb: secb[mm].setdefault('_pad', {})[s] = p
+    estado['_pad'] = {'mun': PM, 'dl': PL, 'df': PF, 'est': PE}
+    pad_meta = {'corte': '8 de octubre de 2026', 'grupos': ['18-19', '20-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50-54', '55-59', '60-64', '65+'],
+                'fuente': 'INE, DERFE, Padrón Electoral y Lista Nominal por sección, edad y sexo (datos abiertos)'}
+    print(f'Padrón: {len(PM)} municipios · lista nominal estatal {PE[1]:,}')
+afi_meta = None
+if AFILIADOS:
+    A = json.load(open(AFILIADOS)); AF = {}
+    for p, d in A.items():
+        y = {int(k.split('|')[1]): v for k, v in d.get('anio', {}).items() if k.startswith('PUEBLA|') and k.split('|')[1].isdigit()}
+        AF[p] = {'t': d['ent'].get('PUEBLA', 0), 'y': y}
+    estado['_afi'] = AF
+    afi_meta = {'fuente': 'INE, padrones de personas afiliadas a partidos políticos nacionales (verificación 2026); solo hay total por entidad'}
+    print('Afiliados en Puebla:', {p: v['t'] for p, v in AF.items()})
+
 catalogo = {
     'elecciones': cat,
     'municipios': [{'id': int(r.municipio), 'n': r.nombre, 'zm': bool(r.zm), 'det': bool(r.det)} for r in mun.sort_values('nombre').itertuples()],
-    'detalle': DETALLE, 'capital': CAPITAL,
+    'detalle': DETALLE, 'capital': CAPITAL, 'zm': sorted(int(x) for x in mun[mun.zm].municipio), 'padron': pad_meta, 'afiliados': afi_meta,
     'fuentes': {
         'cartografia': 'INE, Base Geográfica Digital, corte dic-2025',
         'zm': 'Zona metropolitana Puebla-Tlaxcala (delimitación INEGI/CONAPO), municipios del estado de Puebla',
@@ -310,4 +358,5 @@ catalogo = {
 json.dump(catalogo, open(f'{OUT}/catalogo.json', 'w'), ensure_ascii=False, separators=(',', ':'))
 json.dump(estado, open(f'{OUT}/_claro/estado.json', 'w'), ensure_ascii=False, separators=(',', ':'))
 for m, v in secb.items(): json.dump(v, open(f'{OUT}/_claro/m{m}.json', 'w'), ensure_ascii=False, separators=(',', ':'))
-for f in sorted(glob.glob(f'{OUT}/_claro/*.json')): print(f'  {os.path.basename(f)}: {os.path.getsize(f) // 1024} KB')
+tot = sum(os.path.getsize(f) for f in glob.glob(f'{OUT}/_claro/*.json'))
+print(f'  _claro: {len(secb) + 1} paquetes · {tot // 1024} KB · estado {os.path.getsize(f"{OUT}/_claro/estado.json") // 1024} KB · capital {os.path.getsize(f"{OUT}/_claro/m115.json") // 1024} KB')
