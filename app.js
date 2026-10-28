@@ -169,7 +169,9 @@ function colorFor(u, key, vk) {
 }
 function computeAgg(vk) {
   const v = VK(vk), out = {};
-  for (const f of GEO[v.geo].features) { const key = f.properties[v.id]; const a = agg(vk, key, S.el); out[key] = { a, w: verdict(S.el, a) }; }
+  // en ayuntamientos, un distrito junta varios municipios con coaliciones distintas: se decide por fuerza
+  const grp = ELS[S.el].tipo === 'AYU' && (vk === 'dl' || vk === 'df');
+  for (const f of GEO[v.geo].features) { const key = f.properties[v.id]; const a = agg(vk, key, S.el); out[key] = { a, w: grp ? verdictB(S.el, a) : verdict(S.el, a) }; }
   return out;
 }
 /* qué se ve nítido: la selección o el foco; lo demás se difumina */
@@ -278,16 +280,24 @@ const chip = (p, sm) => `<span class="pch${sm ? ' sm' : ''}" style="background:$
 const chips = c => c.startsWith('CAND_IND') ? chip('IND') : c.split('-').map(p => chip(p)).join('');
 /* resumen sobre el mapa */
 function hero() {
-  const F = S.sel && S.sel.u !== 'mun' ? S.sel : S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a), v = VK(S.vista);
-  const who = w ? personFor(S.el, F.u, F.key, w.c) : null, top = r.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
+  const F = S.sel && S.sel.u !== 'mun' ? S.sel : S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), v = VK(S.vista), t = topB(S.el, a, F.u, F.key);
+  const g = rankB(S.el, a), top = g.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
   let won = null, tot = 0;
-  if (v.det && F.u === 'mun') { won = {}; for (const f of GEO[v.geo].features) { const p = f.properties; if ((v.k === 'ja' ? 115 : p.municipio) !== F.key) continue; tot++; const u = AGG[p[v.id]]; if (u && u.w && !u.w.tie) won[u.w.c] = (won[u.w.c] || 0) + 1; } }
-  $('#hero').innerHTML = `<div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(unitName(F.u, F.key))} · ${m.anio}</div><h2>${esc(cargoBase(m.cargo))}<small>${a.t ? (a.ln ? p1(pct(a.t, a.ln)) + ' de participación' : fmt(a.t) + ' votos') : 'Sin elección en ' + m.anio}</small></h2>
-    ${a.t ? `<div class="stack">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${candColor(x.c)}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
-    ${w && !w.tie ? `<div class="who-won">Ganó <b>${esc(who || shortCand(w.c))}</b>${who ? ` <span>(${esc(shortCand(w.c))})</span>` : ''}</div>` : ''}
-    <div class="rows">${top.map(x => `<div class="r" data-cand="${x.c}"><span class="sw" style="background:${candColor(x.c)}"></span><span class="nm">${esc(shortCand(x.c))}</span><span class="pc">${p1(pct(x.v, a.t))}</span>${won ? `<span class="wn">${won[x.c] || 0} de ${tot}</span>` : ''}</div>`).join('')}</div>` : ''}`;
+  if (v.det && F.u === 'mun') { won = {}; for (const f of GEO[v.geo].features) { const p = f.properties; if ((v.k === 'ja' ? 115 : p.municipio) !== F.key) continue; tot++; const u = AGG[p[v.id]]; if (u && u.w && !u.w.tie) { const kk = leadOf(u.w.c); won[kk] = (won[kk] || 0) + 1; } } }
+  const dist = F.u === 'dl' || F.u === 'df' ? distInfo(F.u, F.key) : '';
+  $('#hero').innerHTML = `<div class="eyebrow"><svg><use href="#i-rombo"/></svg>${esc(unitName(F.u, F.key))} · ${m.anio}</div>${dist}<h2>${esc(cargoBase(m.cargo))}<small>${a.t ? (a.ln ? p1(pct(a.t, a.ln)) + ' de participación' : fmt(a.t) + ' votos') : 'Sin elección en ' + m.anio}</small></h2>
+    ${a.t ? `<div class="stack">${top.map(x => `<i style="width:${pct(x.v, a.t)}%;background:${x.col}"></i>`).join('')}<i style="width:${pct(rest, a.t)}%;background:var(--nores)"></i></div>
+    ${t && !t.tie ? `<div class="who-won">${t.many ? 'Más votos' : 'Ganó'} <b>${esc(t.who || t.g0.name)}</b>${t.who ? ` <span>(${esc(t.g0.name)})</span>` : ''}${t.many ? ' <span>· suma de sus candidaturas en cada municipio</span>' : ''}</div>` : ''}
+    <div class="rows">${top.map(x => `<div class="r" ${x.one ? `data-cand="${x.one}"` : ''}><span class="sw" style="background:${x.col}"></span><span class="nm">${esc(x.name)}</span><span class="pc">${p1(pct(x.v, a.t))}</span>${won ? `<span class="wn">${won[x.k] || 0} de ${tot}</span>` : ''}</div>`).join('')}</div>` : ''}`;
   linkRows($('#hero')); placeHome();
 }
+const titleEs = s => String(s || '').toLowerCase().replace(/(^|[\s(])(\S)/g, (x, a, b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
+/* diputación del distrito: cabecera y quién la ganó en la elección más reciente (hasta el año consultado) */
+function diputado(t, k) { const T = t.toUpperCase(), y = ELS[S.el].anio;
+  const es = CAT.elecciones.filter(e => e.tipo === T && e.anio <= y && EST[e.id] && EST[e.id].g && EST[e.id].g[t + k]).sort((a, b) => b.anio - a.anio);
+  if (!es.length) return null; const w = EST[es[0].id].g[t + k]; return { name: titleEs(w[0]), party: (w[1] || '').split(/[_-]/)[0], anio: es[0].anio }; }
+function distInfo(t, k) { const cab = CAT.cabeceras && CAT.cabeceras[t] && CAT.cabeceras[t][String(k)], d = diputado(t, k);
+  return `<div class="dinfo">${cab ? `<span><em>Cabecera</em><b>${esc(titleEs(cab))}</b></span>` : ''}${d ? `<span><em>Diputación ${t === 'dl' ? 'local' : 'federal'} ${d.anio}</em><b>${esc(d.name)}</b> ${d.party ? chip(d.party, 1) : ''}</span>` : ''}</div>`; }
 
 /* =================== GRÁFICAS =================== */
 function trendData(u, key) {
@@ -357,6 +367,8 @@ const compLvl = m => m < 5 ? ['alta', 'competencia alta'] : m < 15 ? ['media', '
 /* agrupa candidaturas por la fuerza que las encabeza: en un distrito o en todo el estado cada municipio tuvo coaliciones distintas */
 function rankB(eid, a) { const by = {}; for (const x of ranking(eid, a)) { const k = x.c.startsWith('CAND_IND') ? x.c : leadOf(x.c); (by[k] = by[k] || { k, v: 0, cs: [] }); by[k].v += x.v; by[k].cs.push(x.c); }
   return Object.values(by).sort((p, q) => q.v - p.v).map(g => Object.assign(g, { one: g.cs.length === 1 ? g.cs[0] : null, col: g.cs.length === 1 ? candColor(g.cs[0]) : pcol(g.k), name: g.cs.length === 1 ? candShort(g.cs[0]) : g.k + (g.cs.some(c => c.includes('-')) ? ' y aliados' : ''), short: g.cs.length === 1 ? plusName(g.cs[0]) : g.k + (g.cs.some(c => c.includes('-')) ? '+' : '') })); }
+function verdictB(eid, a) { const g = rankB(eid, a); if (!a.n || !a.t || !g.length) return null; const g0 = g[0], g1 = g[1];
+  return { c: g0.one || g0.cs[0], label: g0.name, share: pct(g0.v, a.t), margin: pct(g0.v - (g1 ? g1.v : 0), a.t), tie: !!g1 && g1.v === g0.v, second: g1 && (g1.one || g1.cs[0]) }; }
 function topB(eid, a, u, key) { const g = rankB(eid, a); if (!g.length || !a.t) return null; const g0 = g[0], g1 = g[1];
   return { g0, g1, share: pct(g0.v, a.t), margin: pct(g0.v - (g1 ? g1.v : 0), a.t), tie: g1 && g1.v === g0.v, who: g0.one ? personFor(eid, u, key, g0.one) : null, many: g.some(x => x.cs.length > 1) }; }
 function prevShares(eid, u, key, mode) { const p = prevOf(eid); if (!p) return null; const a = agg(u, key, p.id); if (!a.t) return null; return { e: p, a, by: sharesOf(p.id, a, mode) }; }
@@ -528,7 +540,7 @@ function afiliados() {
 }
 
 /* ---------- desglose por unidad ---------- */
-function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? (MS.key === 115 && GEO.juntas.features.length ? [['ja', 'Junta auxiliar']] : [['sec', 'Sección']]) : (u === 'dl' || u === 'df') ? (new Set(secsOfUnit(u, MS.key).map(s => SECMUN[s])).size > 1 ? [['mun', 'Municipio'], ['sec', 'Sección']] : [['sec', 'Sección']]) : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
+function subLevels(u) { return u === 'est' ? [['mun', 'Municipio'], ['dl', 'Distrito local'], ['df', 'Distrito federal'], ['sec', 'Sección']] : u === 'mun' ? (MS.key === 115 && GEO.juntas.features.length ? [['ja', 'Junta auxiliar']] : [['sec', 'Sección']]) : (u === 'dl' || u === 'df') ? [['mun', 'Municipio']] : (u === 'ja' || u === 'col') ? [['sec', 'Sección']] : []; }
 function subUnits(lvl, u, key, eid) {
   const out = [], E = EST[eid]; if (!E) return out;
   const push = (k, a, name) => { if (!a.t || !a.n) return; const w = verdict(eid, a); out.push({ k, a, w, name, r: ranking(eid, a) }); };
@@ -848,6 +860,8 @@ function context(u, key) {
       + (cols.length ? `<div class="chips">${cols.slice(0, 10).map(c => chp('col:' + c, GEO.colonias.byId[c].properties.nombre)).join('')}${cols.length > 10 ? `<span class="chip static">y ${cols.length - 10} colonias más</span>` : ''}</div>` : ''); }
   if (u === 'col') { const p = GEO.colonias.byId[key].properties;
     return `<div class="chips"><span class="chip static">CP ${esc(p.cp)}</span>${chp('mun:' + p.municipio, unitName('mun', p.municipio))}${p.ja ? chp('ja:' + p.ja, p.ja) : ''}${p.secs.map(s => chp('sec:' + s, 'Sección ' + s)).join('')}</div>`; }
+  if (u === 'dl' || u === 'df') { const ms = [...new Set(secsOfUnit(u, key).map(s => SECMUN[s]))].filter(Boolean).sort((x, y) => MUNN[x].localeCompare(MUNN[y]));
+    return `<div class="ubi">${distInfo(u, key)}${ms.length ? `<div class="ubi-r"><span class="ubi-l">Municipios</span><span class="ubi-c wrap">${ms.map(m => chp('mun:' + m, MUNN[m])).join('')}</span></div>` : ''}</div>`; }
   if (u === 'mun') { const mm = CAT.municipios.find(x => x.id === key), tags = [];
     if (key === 115) tags.push('Capital'); else if (mm && mm.det) tags.push('Conurbado'); if (mm && mm.zm) tags.push('Zona metropolitana');
     const ss = secsOfUnit('mun', key).map(s => GEO.secciones.byId[s].properties), dls = [...new Set(ss.map(q => q.distrito_l))].sort((a, b) => a - b), dfs = [...new Set(ss.map(q => q.distrito_f))].sort((a, b) => a - b);
@@ -1083,7 +1097,7 @@ function addLayers() {
     if (!hov || hov.id !== id || hov.source !== 'g-' + v.geo) { clearHov(); hov = { source: 'g-' + v.geo, id }; if (v.k === 'mun') setHovMun(id); else map.setFeatureState(hov, { h: true }); }
     map.getCanvas().style.cursor = 'pointer'; if (isMobile()) return;
     const u = v.k === 'mun' ? MUNAGG[id] : AGG[id], w = u && u.w, mm = v.k === 'sec' ? f.properties.municipio : null;
-    tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${mm ? `<span class="m">${esc(MUNN[mm])}</span><br>` : v.k === 'mun' && id !== S.foco.key ? '<span class="m">Clic para entrar y ver sus secciones</span><br>' : ''}${w ? (w.tie ? 'Empate' : `${esc(candLabel(w.c))} · ${p1(w.share)}`) + (u.a.ln ? `<br><span class="m">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : '') + (S.modo === 'comp' && !w.tie ? `<br><span class="m">Ventaja ${w.margin.toFixed(1)} pts · competencia ${compLvl(w.margin)[0]}</span>` : '') + (S.modo === 'hist' ? (hh => !hh.kind ? '' : hh.kind === 'bastion' ? `<br><b class="tb">Bastión de ${esc(hh.p)}:</b> <span class="m">ganó en ${hh.ws.map(x => x.e.anio).join(', ')}</span>` : `<br><b class="tb">Alternó:</b> <span class="m">${hh.ws.map(x => `${esc(x.p)} (${x.e.anio})`).join(' → ')}</span>`)(histOf(v.k, id)) : '') : `<span class="m">${v.k === 'sec' ? 'Sección creada después de esta elección' : 'Sin resultados en esta elección'}</span>`}`;
+    tip.innerHTML = `<b>${esc(unitName(v.k, id))}</b>${mm ? `<span class="m">${esc(MUNN[mm])}</span><br>` : v.k === 'mun' && id !== S.foco.key ? '<span class="m">Clic para entrar y ver sus secciones</span><br>' : ''}${w ? (w.tie ? 'Empate' : `${esc(w.label || candLabel(w.c))} · ${p1(w.share)}`) + (u.a.ln ? `<br><span class="m">Participación ${p1(pct(u.a.t, u.a.ln))}</span>` : '') + (S.modo === 'comp' && !w.tie ? `<br><span class="m">Ventaja ${w.margin.toFixed(1)} pts · competencia ${compLvl(w.margin)[0]}</span>` : '') + (S.modo === 'hist' ? (hh => !hh.kind ? '' : hh.kind === 'bastion' ? `<br><b class="tb">Bastión de ${esc(hh.p)}:</b> <span class="m">ganó en ${hh.ws.map(x => x.e.anio).join(', ')}</span>` : `<br><b class="tb">Alternó:</b> <span class="m">${hh.ws.map(x => `${esc(x.p)} (${x.e.anio})`).join(' → ')}</span>`)(histOf(v.k, id)) : '') : `<span class="m">${v.k === 'sec' ? 'Sección creada después de esta elección' : 'Sin resultados en esta elección'}</span>`}`;
     tip.hidden = false; const Wd = map.getContainer().clientWidth; tip.style.left = Math.min(e.point.x + 14, Wd - 270) + 'px'; tip.style.top = (e.point.y + 14) + 'px';
   });
   map.on('mouseout', () => { clearHov(); tip.hidden = true; });

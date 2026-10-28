@@ -364,10 +364,17 @@ if AFILIADOS:
     afi_meta = {'fuente': 'INE, padrones de personas afiliadas a partidos políticos nacionales (verificación 2026); solo hay total por entidad'}
     print('Afiliados en Puebla:', {p: v['t'] for p, v in AF.items()})
 
+# cabeceras distritales (del cómputo 2024, el trazo vigente)
+CABS = {'dl': {}, 'df': {}}
+for fn, t, cid, ccab in (('2024_SEE_DIP_LOC_MR_PUE_SEC', 'dl', 'ID_DISTRITO_LOCAL', 'CABECERA_DISTRITAL_LOCAL'), ('2024_SEE_DIP_FED_MR_NAL_SEC', 'df', 'ID_DISTRITO_FEDERAL', 'CABECERA_DISTRITAL_FEDERAL')):
+    rr = csv.reader(open(f'{RES}/{fn}.csv', encoding='utf-8-sig')); hh = [re.sub(r'^(?:\ufeff|ï»¿)+', '', c.strip()) for c in next(rr)]
+    ie, idd, ic = hh.index('ID_ESTADO'), hh.index(cid), hh.index(ccab)
+    for r in rr:
+        if r and r[ie].strip().lstrip('0') == '21': CABS[t].setdefault(str(int(r[idd])), r[ic].strip().title())
 catalogo = {
     'elecciones': cat,
     'municipios': [{'id': int(r.municipio), 'n': r.nombre, 'zm': bool(r.zm), 'det': bool(r.det)} for r in mun.sort_values('nombre').itertuples()],
-    'detalle': DETALLE, 'capital': CAPITAL, 'zm': sorted(int(x) for x in mun[mun.zm].municipio), 'padron': pad_meta, 'afiliados': afi_meta,
+    'cabeceras': CABS, 'detalle': DETALLE, 'capital': CAPITAL, 'zm': sorted(int(x) for x in mun[mun.zm].municipio), 'padron': pad_meta, 'afiliados': afi_meta,
     'fuentes': {
         'cartografia': 'INE, Base Geográfica Digital, corte dic-2025',
         'zm': 'Zona metropolitana Puebla-Tlaxcala (delimitación INEGI/CONAPO), municipios del estado de Puebla',
