@@ -147,7 +147,8 @@ const COMP_COL = { alta: '#7D2447', media: '#BFB591', baja: '#A9ADAB' }, ALT_COL
 const histEls = () => { const c = cargoBase(ELS[S.el].cargo); return CAT.elecciones.filter(e => cargoBase(e.cargo) === c && !e.cargo.includes('extra')).sort((a, b) => a.anio - b.anio); };
 const HIST = {};
 function histOf(vk, key) { const id = vk + ':' + key + ':' + cargoBase(ELS[S.el].cargo); if (HIST[id]) return HIST[id];
-  const ws = histEls().map(e => { const w = verdict(e.id, agg(vk, key, e.id)); return { e, p: w && !w.tie ? leadOf(w.c) : null }; }).filter(x => x.p);
+  const fam = c => { const ps = c.split('-'); return ['MORENA', 'PAN', 'PRI', 'MC'].find(x => ps.includes(x)) || leadOf(c); };
+  const ws = histEls().map(e => { const w = verdict(e.id, agg(vk, key, e.id)); return { e, p: w && !w.tie && !w.c.startsWith('CAND_IND') ? fam(w.c) : null }; }).filter(x => x.p);
   const kind = ws.length < 2 ? null : ws.every(x => x.p === ws[0].p) ? 'bastion' : 'alterna';
   return HIST[id] = { ws, kind, p: kind === 'bastion' ? ws[0].p : null }; }
 function colorFor(u, key, vk) {
@@ -271,7 +272,7 @@ const chip = (p, sm) => `<span class="pch${sm ? ' sm' : ''}" style="background:$
 const chips = c => c.startsWith('CAND_IND') ? chip('IND') : c.split('-').map(p => chip(p)).join('');
 /* resumen sobre el mapa */
 function hero() {
-  const F = S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a), v = VK(S.vista);
+  const F = S.sel && S.sel.u !== 'mun' ? S.sel : S.foco, m = ELS[S.el], a = agg(F.u, F.key, S.el), r = ranking(S.el, a), w = verdict(S.el, a), v = VK(S.vista);
   const who = w ? personFor(S.el, F.u, F.key, w.c) : null, top = r.slice(0, 3), rest = a.t - top.reduce((s, x) => s + x.v, 0);
   let won = null, tot = 0;
   if (v.det && F.u === 'mun') { won = {}; for (const f of GEO[v.geo].features) { const p = f.properties; if ((v.k === 'ja' ? 115 : p.municipio) !== F.key) continue; tot++; const u = AGG[p[v.id]]; if (u && u.w && !u.w.tie) won[u.w.c] = (won[u.w.c] || 0) + 1; } }
@@ -537,7 +538,7 @@ function drawExplore() {
   let h = `<div class="xp-top"><div><h3 id="mtitle">${kind === 'res' ? 'Resultados por partido / coalición' : 'Evolución del voto'}</h3><small>${esc(name)}${kind === 'res' && a.t ? (n => ` · ${fmt(n)} ${n === 1 ? 'sección' : 'secciones'} · ${fmt(a.t)} votos emitidos`)(secsOfUnit(u, key).length) : ` · ${esc(cargo)}, ${years.map(x => x.anio).filter((v, i, A) => A.indexOf(v) === i).join(', ')}`}</small></div>
     <div class="tabs xp-kind"><button data-k="res" class="${kind === 'res' ? 'on' : ''}">Resultados</button><button data-k="tr" class="${kind === 'tr' ? 'on' : ''}">Evolución</button></div></div>
     <div class="xp-bar"><div class="xp-places"><span class="xp-lbl">Lugar</span><div class="tabs">${placeOpts(MS.u0, MS.k0).map(([pu, pk]) => `<button data-pu="${pu}" data-pk="${pk}" class="${pu === u && pk === key ? 'on' : ''}">${esc(unitName(pu, pk))}</button>`).join('')}</div>
-      ${u !== 'est' && (dl.length || df.length) ? `<span class="xp-lbl">Sus distritos</span><div class="tabs">${dl.map(d => `<button data-pu="dl" data-pk="${d}" class="${u === 'dl' && key === d ? 'on' : ''}">Local ${d}</button>`).join('')}</div><div class="tabs">${df.map(d => `<button data-pu="df" data-pk="${d}" class="${u === 'df' && key === d ? 'on' : ''}">Federal ${d}</button>`).join('')}</div>` : ''}</div>
+      </div>${u !== 'est' && (dl.length || df.length) ? `<div class="xp-places"><span class="xp-lbl">Distritos</span><span class="xp-dl">Locales</span><div class="tabs">${dl.map(d => `<button data-pu="dl" data-pk="${d}" class="${u === 'dl' && key === d ? 'on' : ''}">${d}</button>`).join('')}</div><span class="xp-dl">Federales</span><div class="tabs">${df.map(d => `<button data-pu="df" data-pk="${d}" class="${u === 'df' && key === d ? 'on' : ''}">${d}</button>`).join('')}</div></div>` : ''}
     <div class="xp-els"><div class="tabs">${CARGOS.map(c => `<button data-cg="${c}" class="${c === cargo ? 'on' : ''}">${CSHORT[c]}</button>`).join('')}</div>
       ${kind === 'res' ? `<div class="tabs">${years.map(x => `<button data-xe="${x.id}" class="${x.id === el ? 'on' : ''}">${x.anio}${x.cargo.includes('extra') ? '*' : ''}</button>`).join('')}</div>` : ''}
       <span class="tabs" id="xp-partes"><button data-p="cand" class="${MS.partes === 'cand' ? 'on' : ''}">Por coalición</button><button data-p="part" class="${MS.partes === 'part' ? 'on' : ''}">Por partido</button></span></div></div>`;
@@ -604,8 +605,9 @@ function renderPanel() {
   h += notes(u, a) + context(u, key);
   const tr = trendLine(u, key, cargo, 'cand', 420, 250, S.el); if (tr) h += card('tr', 'Evolución del voto', trendHead(u, key, cargo, 'cand', S.el) + tr, { sub: `${esc(cargo)} · ${esc(name)}` });
   const dg = datosGen(u, key); if (dg) h += card('dat', 'Datos generales', dg, { sub: `${esc(name)} · corte ${esc(CAT.padron.corte)}`, zoom: false });
-  const st = m.tipo === 'SEN' ? null : seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state', zoom: false });
-  const ce = m.tipo !== 'DL' ? congEl() : null, sc2 = ce ? seats(ce) : null;
+  const isHome = !S.sel && S.foco.u === HOME.u && S.foco.key === HOME.key, showState = isHome || CAPAS.alcance === 'todo';
+  const st = m.tipo === 'SEN' || !showState ? null : seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state', zoom: false });
+  const ce = m.tipo !== 'DL' && showState ? congEl() : null, sc2 = ce ? seats(ce) : null;
   if (sc2) h += card('cong', esc(sc2.title), seatsBody(sc2), { sub: 'Todo el estado de Puebla', cls: 'state', zoom: false });
   if (CAPAS.alcance === 'todo' && EST._afi) h += card('afi', 'Afiliados por partido', afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`, { sub: 'Todo el estado · % de la lista nominal', zoom: false, cls: 'state' });
   h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}. ${esc(CAT.padron.fuente)}.</div>`;
@@ -700,8 +702,8 @@ function legend() {
       let k; if (S.modo === 'comp') k = u.w.tie ? 'alta' : compLvl(u.w.margin)[0]; else { const hh = histOf(S.vista, S.vista === 'ja' ? kk : +kk); if (!hh.kind) continue; k = hh.kind === 'bastion' ? hh.p : '_alt'; } tot++; cnt[k] = (cnt[k] || 0) + 1; }
     const yrs = histEls().map(e => e.anio);
     h += S.modo === 'comp'
-      ? `<div class="lg-sub">Ventaja del ganador sobre el 2º lugar</div><div class="lg-win">${[['alta', 'Menos de 5 pts'], ['media', '5 a 15 pts'], ['baja', 'Más de 15 pts']].map(([k, l]) => `<span class="it"><span class="sw" style="background:${COMP_COL[k]}"></span>${l}<b>${cnt[k] || 0}</b></span>`).join('')}</div>`
-      : `<div class="lg-sub">Mismo ganador en todas las elecciones ${yrs[0]}–${yrs[yrs.length - 1]}</div><div class="lg-win">${Object.entries(cnt).filter(([k]) => k !== '_alt').sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="it">${chip(k, 1)}<b>${n}</b></span>`).join('')}<span class="it"><span class="sw" style="background:${ALT_COL}"></span>Alternó<b>${cnt._alt || 0}</b></span></div>`;
+      ? `<div class="lg-sub">Qué tan reñida fue: ventaja del ganador sobre el 2º lugar</div><div class="lg-win">${[['alta', 'Menos de 5 pts'], ['media', '5 a 15 pts'], ['baja', 'Más de 15 pts']].map(([k, l]) => `<span class="it"><span class="sw" style="background:${COMP_COL[k]}"></span>${l}<b>${cnt[k] || 0}</b></span>`).join('')}</div>`
+      : `<div class="lg-sub"><b>Bastión:</b> ganó la misma fuerza en ${yrs.join(', ')}. <b>Alternó:</b> ganaron fuerzas distintas. Cada coalición cuenta para su partido principal (MORENA, PAN, PRI o MC).</div><div class="lg-win">${Object.entries(cnt).filter(([k]) => k !== '_alt').sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="it">${chip(k, 1)}<b>${n}</b></span>`).join('')}<span class="it"><span class="sw" style="background:${ALT_COL}"></span>Alternó<b>${cnt._alt || 0}</b></span></div>`;
     h += `<div class="lg-n">${tot} ${({ sec: 'secciones', col: 'colonias', ja: 'juntas auxiliares', mun: 'municipios', dl: 'distritos locales', df: 'distritos federales' })[S.vista]} en total</div>`; }
   else if (S.modo === 'cambio') { const c = cmpEl(); const n = Object.entries(AGG).filter(([k, u]) => u.w && c && (w0 => w0 && leadOf(w0.c) !== leadOf(u.w.c))(verdict(c.id, agg(S.vista, S.vista === 'ja' ? k : +k, c.id)))).length;
     h += `<div class="items"><span class="it"><span class="sw" style="background:${g}"></span>Cambió de partido (${n})</span><span class="it"><span class="sw" style="background:${mix(g, bg, .8)}"></span>Repitió</span></div>`; }
@@ -780,8 +782,9 @@ function context(u, key) {
   if (u === 'mun') { const mm = CAT.municipios.find(x => x.id === key), tags = [];
     if (key === 115) tags.push('Capital'); else if (mm && mm.det) tags.push('Conurbado'); if (mm && mm.zm) tags.push('Zona metropolitana');
     const ss = secsOfUnit('mun', key).map(s => GEO.secciones.byId[s].properties), dls = [...new Set(ss.map(q => q.distrito_l))].sort((a, b) => a - b), dfs = [...new Set(ss.map(q => q.distrito_f))].sort((a, b) => a - b);
-    return `<div class="chips">${tags.map(t => `<span class="chip static">${t}</span>`).join('')}${DETOK.includes(key) && S.vista !== 'sec' ? `<button class="chip" data-secs="${key}">Ver sus secciones</button>` : ''}</div>
-      <div class="chips"><span class="chip static">Sus distritos</span>${dls.map(d => chp('dl:' + d, 'Local ' + d)).join('')}${dfs.map(d => chp('df:' + d, 'Federal ' + d)).join('')}</div>`; }
+    return `<div class="ubi">${tags.length ? `<div class="ubi-r"><span class="ubi-l">Ubicación</span><span class="ubi-t">${tags.join(' · ')}</span>${DETOK.includes(key) && S.vista !== 'sec' ? `<button class="chip" data-secs="${key}">Ver sus secciones en el mapa</button>` : ''}</div>` : ''}
+      <div class="ubi-r"><span class="ubi-l">Distritos locales</span><span class="ubi-c">${dls.map(d => chp('dl:' + d, d)).join('')}</span></div>
+      <div class="ubi-r"><span class="ubi-l">Distritos federales</span><span class="ubi-c">${dfs.map(d => chp('df:' + d, d)).join('')}</span></div><div class="ubi-h">Clic en un número para consultar ese distrito.</div></div>`; }
   return '';
 }
 function notes(u, a) {
@@ -807,7 +810,7 @@ function select(sel) {
   const flt = ['==', ['get', v.id], on ? sel.key : '__none__'];
   addL({ id: 'sel-sh', type: 'line', source: 'g-' + v.geo, filter: flt, paint: { 'line-color': '#000000', 'line-width': 11, 'line-opacity': .35, 'line-blur': 7, 'line-translate': [0, 2] } });
   addL({ id: 'sel', type: 'line', source: 'g-' + v.geo, filter: flt, layout: { 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 4.5 } });
-  highlight(); renderPanel();
+  highlight(); renderPanel(); hero();
   if (sel && isMobile()) $('#panel').dataset.state = 'open';
 }
 function geomOf(u, key) { const v = VK(u); const f = GEO[v.geo].features.find(f => f.properties[v.id] === key); return f && f.geometry; }

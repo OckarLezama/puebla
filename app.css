@@ -924,3 +924,16 @@ details.dz[open] > summary { margin-bottom: 8px; }
 .vc2-tag { white-space: nowrap; font-size: 9px; padding: 1px 5px; }
 .legend .lg-sub { font-size: 11px; color: var(--muted); }
 .legend .lg-modes { flex-wrap: wrap; }
+/* v15 */
+.legend { max-width: min(560px, calc(100% - 80px)); }
+.legend .lg-modes { flex-wrap: nowrap; } .legend .lg-modes button { flex: 1 0 auto; }
+.legend .lg-sub { max-width: 500px; line-height: 1.4; }
+.ubi { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+.ubi-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ubi-l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; min-width: 112px; }
+.ubi-t { font-weight: 600; font-size: 13px; }
+.ubi-c { display: flex; flex-wrap: wrap; gap: 4px; } .ubi-c .chip { min-width: 34px; justify-content: center; padding: 3px 9px; }
+.ubi-h { font-size: 11px; color: var(--muted); }
+.xp-dl { font-size: 12px; font-weight: 600; color: var(--muted); }
+@media (max-width: 760px) { .legend .lg-modes { flex-wrap: wrap; } .ubi-l { min-width: 0; flex-basis: 100%; } }
+.ubi-l { min-width: 128px; white-space: nowrap; }
