@@ -102,6 +102,7 @@ col['nombre'] = col.nombre.map(titulo); col['cp'] = col.cp.fillna(0).astype(int)
 save(mun, 'municipios', 35)
 save(dl, 'dl', 35); save(df, 'df', 35)
 save(mun[mun.zm].dissolve()[['geometry']].assign(n='Zona metropolitana'), 'zm', 25)
+save(mun[mun.det].dissolve()[['geometry']].assign(n='Zona conurbada'), 'conurb', 25)
 secall = sec.copy(); secall['ja'] = secall.seccion.map(JA).fillna('')
 # tolerancia según importancia: zona de detalle fina, zona metropolitana media, resto del estado gruesa
 zmids = set(mun[mun.zm].municipio)
