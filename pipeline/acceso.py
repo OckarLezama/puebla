@@ -46,8 +46,8 @@ out = f'{DATA}/seguro'; shutil.rmtree(out, ignore_errors=True); os.makedirs(out)
 K = {}
 for cab, fn in paquetes.items():
     K[cab] = secrets.token_bytes(32)
-    open(f'{out}/{cab}.bin', 'wb').write(enc(K[cab], gzip.compress(open(fn, 'rb').read(), 9)))
-K['admin'] = secrets.token_bytes(32); open(f'{out}/admin.bin', 'wb').write(enc(K['admin'], gzip.compress(claro_admin, 9)))
+    open(f'{out}/{cab}.txt', 'w').write(b64(enc(K[cab], gzip.compress(open(fn, 'rb').read(), 9))))
+K['admin'] = secrets.token_bytes(32); open(f'{out}/admin.txt', 'w').write(b64(enc(K['admin'], gzip.compress(claro_admin, 9))))
 
 sal = secrets.token_hex(16); U = {}
 for u in users:
@@ -65,4 +65,4 @@ for u in users:
         'k': {c: b64(enc(kek, K[c])) for c in cabs}}
     print(f'  {usr:16} {NIV[nivel]:14} {amb or "-":6} → {", ".join(cabs)}')
 json.dump({'sal': sal, 'it': IT, 'u': U}, open(f'{DATA}/acceso.json', 'w'), separators=(',', ':'))
-for f in sorted(glob.glob(f'{out}/*.bin')): print(f'  seguro/{os.path.basename(f)}: {os.path.getsize(f) // 1024} KB')
+for f in sorted(glob.glob(f'{out}/*.txt')): print(f'  seguro/{os.path.basename(f)}: {os.path.getsize(f) // 1024} KB')

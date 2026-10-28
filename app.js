@@ -79,8 +79,8 @@ async function login(usuario, clave) {
   return { perfil, keys };
 }
 async function openBundle(cab, key) {
-  const r = await fetch('data/seguro/' + cab + '.bin', { cache: 'no-cache' }); if (!r.ok) throw new Error(cab + ' ' + r.status);
-  return gunzipJSON(await aesOpen(b64d(key), new Uint8Array(await r.arrayBuffer())));
+  const r = await fetch('data/seguro/' + cab + '.txt', { cache: 'no-cache' }); if (!r.ok) throw new Error(cab + ' ' + r.status);
+  return gunzipJSON(await aesOpen(b64d(key), b64d((await r.text()).trim())));
 }
 
 /* =================== AGREGACIÓN =================== */

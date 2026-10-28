@@ -16,7 +16,7 @@ Detalle por sección: Puebla, San Andrés Cholula, San Pedro Cholula, Cuautlanci
 
 ## Acceso
 
-Los resultados se guardan cifrados (`data/seguro/*.bin`, AES-256-GCM). Cada usuario abre solo los paquetes de su nivel con su clave (PBKDF2). En el repositorio no queda ninguna clave ni resultado legible.
+Los resultados se guardan cifrados (`data/seguro/*.txt`, AES-256-GCM). Cada usuario abre solo los paquetes de su nivel con su clave (PBKDF2). En el repositorio no queda ninguna clave ni resultado legible.
 
 | Nivel | Ve |
 |---|---|
