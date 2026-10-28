@@ -315,6 +315,7 @@ function bindTips(root) {
   });
 }
 const hideTip = () => { const T = $('#ctip'); if (T) T.hidden = true; };
+window.addEventListener('scroll', hideTip, true); window.addEventListener('touchstart', e => { if (!e.target.closest('[data-tip]')) hideTip(); }, { passive: true });
 
 /* columnas verticales: cada candidatura es una columna formada por sus partidos; la trama son los votos con varios logos */
 const partesTabs = (cur, id = 'partes') => `<span class="tabs" id="${id}"><button data-p="cand" class="${cur === 'cand' ? 'on' : ''}">Coalición</button><button data-p="part" class="${cur === 'part' ? 'on' : ''}">Partido</button></span>`;
