@@ -195,6 +195,8 @@ function highlight() {
   if (map.getLayer('cap-l')) { const other = fm !== -1 && fm !== 115; map.setPaintProperty('cap-l', 'line-opacity', other ? .35 : 1); map.setPaintProperty('cap-glow', 'line-opacity', other ? 0 : .18); }
   focoLabel(fm);
   if (map.getLayer('mask')) { const keep = activeMuns(munOf); map.setFilter('mask', keep ? ['!', ['in', ['get', 'municipio'], ['literal', keep]]] : ['==', ['get', 'municipio'], -1]); }
+  if (S.pinB) mapFocusParty(S.pinB);
+  syncHash();
   const home = S.foco.u === HOME.u && S.foco.key === HOME.key && !S.sel && S.vista === HOME.vista && CAPAS.alcance === 'foco';
   $('#btn-home').hidden = home; placeHome();
 }
@@ -486,10 +488,17 @@ function datosGen(u, key) {
 function seatsBody(s) {
   const nmb = b => s.t === 'AYU' ? allyName(s.eid, b) : s.nm(b), c0 = pcol(s.order[0]), n0 = s.bl[s.order[0]].n;
   if (s.t === 'AYU') {
+    const E = EST[s.eid], tot = { ln: 0, t: 0 }, by = {};
+    for (const x of s.list) { const a = EMPTY(); addPack(a, E.mun[x.m]); const w = verdict(s.eid, a); (by[x.b] = by[x.b] || { ln: 0, t: 0, v: 0, ms: [] }); by[x.b].ln += a.ln; by[x.b].t += a.t; by[x.b].v += w ? a.c[ELS[s.eid].cand.indexOf(w.c)] : 0; by[x.b].ms.push({ m: x.m, a, w, co: x.co }); }
+    for (const a of Object.values(E.mun)) { const o = EMPTY(); addPack(o, a); tot.ln += o.ln; tot.t += o.t; }
+    const big = v => v >= 1e6 ? (v / 1e6).toFixed(2) + ' M' : v >= 1e3 ? (v / 1e3).toFixed(0) + ' k' : fmt(v);
     return `<div class="hl"><span class="hl-d" style="background:${c0}"></span><b class="hl-v" style="color:${c0}" data-n="${n0}">0</b><span class="hl-n">de ${s.total} municipios<small>${esc(nmb(s.order[0]))}</small></span></div>
-      <div class="fz">${s.order.map((b, i) => { const n = s.bl[b].n, co = s.list.filter(x => x.b === b && x.co).length;
-        return `<div class="fz-r" data-bloc="${b}" ${tipA(`<b>${esc(nmb(b))}</b><div class="tv"><strong>${n}</strong> de ${s.total} municipios</div><span class="m">${co ? `${co} en coalición · ${n - co} sin coalición` : 'Sin coalición'}</span><span class="m">En el mapa: dónde ganó</span>`)} style="--d:${i * 40}ms"><span class="fz-n"><i style="background:${pcol(b)}"></i>${esc(nmb(b))}</span><span class="fz-b"><i style="width:${(n / n0 * 100).toFixed(1)}%;background:${pcol(b)}"></i></span><b>${n}</b><small>${pct(n, s.total).toFixed(0)}%</small></div>`; }).join('')}</div>
-      <div class="src">Presidencias municipales ganadas, contadas para el partido que encabezó la candidatura. Fuente: registro de candidaturas ganadoras INE / IEE Puebla.</div>`;
+      <div class="ayx-h"><span></span><span></span><span>Municipios</span><span>Lista nominal</span><span>Votos</span></div>
+      <div class="fz ayx">${s.order.map((b, i) => { const n = s.bl[b].n, B = by[b] || { ln: 0, t: 0, v: 0, ms: [] }, on = S.pinB === b;
+        return `<div class="fz-r ayx-r${on ? ' on' : ''}" data-bloc="${b}" data-pin="${b}" ${tipA(`<b>${esc(nmb(b))}</b><div class="tv"><strong>${n}</strong> de ${s.total} municipios</div><div class="tl"><div>Lista nominal donde gobierna<b>${fmt(B.ln)}</b></div><div>% de la lista del estado<b>${p1(pct(B.ln, tot.ln))}</b></div><div>Votos que obtuvo ahí<b>${fmt(B.v)}</b></div></div><span class="m">Clic: fijar en el mapa y ver sus municipios</span>`)} style="--d:${i * 40}ms">
+          <span class="fz-n"><i style="background:${pcol(b)}"></i>${esc(nmb(b).replace(' y aliados', '+'))}</span><span class="fz-b"><i style="width:${(n / n0 * 100).toFixed(1)}%;background:${pcol(b)}"></i></span><b>${n}</b><span class="ayx-v">${big(B.ln)}<small>${pct(B.ln, tot.ln).toFixed(0)}%</small></span><span class="ayx-v">${big(B.v)}<small>${pct(B.t, tot.t).toFixed(0)}%</small></span></div>
+          ${on ? `<div class="ayx-l"><div class="ayx-lh"><b>${n} municipios de ${esc(nmb(b))}</b><button class="amp" data-xls-ayu="${b}">⬇ Excel</button></div><table class="dzt"><thead><tr><th>Municipio</th><th>Ganó con</th><th>Ventaja</th><th>Votos</th><th>Lista nominal</th></tr></thead><tbody>${B.ms.sort((x, y) => y.a.ln - x.a.ln).map(r => `<tr data-go="mun:${r.m}"><td><b>${esc(MUNN[r.m])}</b>${r.co ? ' <small class="co">coalición</small>' : ''}</td><td>${r.w ? p1(r.w.share) : '—'}</td><td>${r.w ? `<span class="dz-v ${compLvl(r.w.margin)[0]}"><b>${r.w.margin.toFixed(1)}</b></span>` : ''}</td><td>${fmt(r.a.t)}</td><td>${fmt(r.a.ln)}</td></tr>`).join('')}</tbody></table></div>` : ''}`; }).join('')}</div>
+      <div class="src">Clic en un partido para fijarlo en el mapa y ver sus municipios. Lista nominal y votos de ${ELS[s.eid].anio} en los municipios que ganó; el % es sobre el total del estado. Coaliciones contadas para el partido que la encabezó. Fuente: INE / IEE Puebla.</div>`;
   }
   const tag = s.t === 'DL' ? (n0 >= s.cal ? 'Mayoría calificada' : n0 >= s.may ? 'Mayoría absoluta' : 'Sin mayoría') : s.t === 'SEN' ? 'Senado' : 'De mayoría relativa';
   const seats = s.list.map((x, i) => `<i class="${x.k}" style="background:${x.k === 'rp' ? `repeating-linear-gradient(135deg,${pcol(x.p)} 0 3px,${mix(pcol(x.p), '#ffffff', .55)} 3px 5px)` : pcol(x.p)};--d:${i * 15}ms" ${tipA(`<b>${esc(pname(x.p))}</b><span class="m">${x.k === 'rp' ? 'Plurinominal' : 'Mayoría relativa'} · bloque ${esc(s.nm(x.b))}</span>`)}></i>`).join('');
@@ -563,7 +572,7 @@ function drawExplore() {
         rows.sort(srt === 'peso' ? (x, y) => y.a.ln - x.a.ln : srt === 'az' ? (x, y) => String(x.name).localeCompare(String(y.name), 'es', { numeric: true }) : (x, y) => (x.w ? x.w.margin : 999) - (y.w ? y.w.margin : 999));
         const mxl = Math.max(...rows.map(x => x.a.ln), 1), LIM = 150;
         h += `<details class="dz"${MS.dz ? ' open' : ''} id="dz-d"><summary><span class="xp-lbl">Desglose por ${esc(subLevels(u).find(x => x[0] === lvl)[1].toLowerCase())}</span><em>${fmt(rows.length)} · ver tabla</em></summary><div class="dz-bar"><span class="xp-lbl">Desglose por</span><div class="tabs">${lvls.map(([k, l]) => `<button data-lv="${k}" class="${k === lvl ? 'on' : ''}">${l}</button>`).join('')}</div>
-          <div class="tabs">${[['comp', 'Más competidos'], ['peso', 'Mayor peso electoral'], ['az', 'A–Z']].map(([k, l]) => `<button data-so="${k}" class="${k === srt ? 'on' : ''}">${l}</button>`).join('')}</div><input id="dz-q" type="search" placeholder="Buscar en ${fmt(rows.length)}…"></div>
+          <div class="tabs">${[['comp', 'Más competidos'], ['peso', 'Mayor peso electoral'], ['az', 'A–Z']].map(([k, l]) => `<button data-so="${k}" class="${k === srt ? 'on' : ''}">${l}</button>`).join('')}</div><input id="dz-q" type="search" placeholder="Buscar en ${fmt(rows.length)}…"><button class="amp" id="xp-xls">⬇ Excel</button></div>
           <table class="dzt"><thead><tr><th></th><th>${esc(subLevels(u).find(x => x[0] === lvl)[1])}</th><th>Reparto del voto</th><th>Ganador</th><th>Ventaja</th><th>Electores</th></tr></thead><tbody>
           ${rows.slice(0, LIM).map((x, i) => { const t3 = x.r.slice(0, 3), rest = x.a.t - t3.reduce((s, y) => s + y.v, 0), cl2 = x.w ? compLvl(x.w.margin)[0] : '';
             return `<tr data-go2="${lvl}:${x.k}" data-nm="${esc(norm(x.name))}"><td class="n">${i + 1}</td><td><b>${esc(x.name)}</b></td><td><div class="dz-rep">${t3.map(y => `<i style="flex:${y.v};background:${candColor(y.c)}" ${tipA(`<b>${esc(candShort(y.c))}</b><div class="tv"><strong>${p1(pct(y.v, x.a.t))}</strong> ${fmt(y.v)} votos</div>`)}></i>`).join('')}<i style="flex:${Math.max(rest, 0)};background:var(--nores)"></i></div></td>
@@ -588,6 +597,7 @@ function drawExplore() {
   $$('#xp [data-lv]').forEach(b => b.onclick = () => { MS.lvl = b.dataset.lv; drawExplore(); });
   $$('#xp [data-so]').forEach(b => b.onclick = () => { MS.sort = b.dataset.so; MS.lvl = MS.lvl || (subLevels(MS.u)[0] || [])[0]; drawExplore(); });
   $$('#xp [data-trf]').forEach(b => b.onclick = () => { TRF = b.dataset.trf; drawExplore(); });
+  const xx = $('#xp-xls'); if (xx) xx.onclick = xlsExplore;
   const dd = $('#dz-d'); if (dd) dd.ontoggle = () => { MS.dz = dd.open; };
   const q = $('#dz-q'); if (q) q.oninput = () => { const v = norm(q.value.trim()); $$('#xp .dzt tbody tr').forEach(tr => tr.hidden = v && !tr.dataset.nm.includes(v)); };
   $$('#xp [data-go2]').forEach(tr => tr.onclick = e => { if (e.target.closest('[data-tip]') && e.target.closest('.dz-rep')) return; const [lv, k] = tr.dataset.go2.split(':'); $('#modal').hidden = true; hideTip(); if (MS.el !== S.el) setEl(MS.el); goTo(lv, k); });
@@ -595,26 +605,73 @@ function drawExplore() {
   const xm = $('#xp-map'); if (xm) xm.onclick = () => { $('#modal').hidden = true; hideTip(); if (MS.el !== S.el) setEl(MS.el); if (!(MS.u === current().u && MS.key === current().key)) goTo(MS.u, MS.key); };
 }
 
+/* =================== EXCEL Y ENLACE =================== */
+let XLSX_P = null;
+const loadXlsx = () => XLSX_P || (XLSX_P = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'vendor/xlsx.mini.min.js'; s.onload = () => res(window.XLSX); s.onerror = rej; document.head.appendChild(s); }));
+async function saveXlsx(sheets, fname) { const X = await loadXlsx(), wb = X.utils.book_new();
+  for (const [name, rows] of sheets) { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map((_, i) => ({ wch: i === 0 ? 30 : 14 })); X.utils.book_append_sheet(wb, ws, name.slice(0, 31)); }
+  X.writeFile(wb, fname.replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/g, '').replace(/\s+/g, '_') + '.xlsx'); }
+function unitRows(eid, list, label) {
+  const m = ELS[eid], cands = m.cand;
+  const head = [label, 'Ganador', '% ganador', 'Ventaja (pts)', 'Votos emitidos', 'Lista nominal', 'Participación %', 'Nulos', ...cands.map(c => candLabel(c))];
+  return [head, ...list.map(x => { const w = x.w; return [x.name, w ? (w.tie ? 'Empate' : candLabel(w.c)) : '', w ? +w.share.toFixed(2) : '', w ? +w.margin.toFixed(2) : '', x.a.t, x.a.ln, x.a.ln ? +pct(x.a.t, x.a.ln).toFixed(2) : '', x.a.nu, ...cands.map((c, i) => x.a.c ? x.a.c[i] : 0)]; })];
+}
+function xlsExplore() {
+  const { u, key, el } = MS, lvls = subLevels(u), lvl = MS.lvl && lvls.some(x => x[0] === MS.lvl) ? MS.lvl : (lvls[0] || [])[0], m = ELS[el], a = agg(u, key, el);
+  const sheets = [['Resumen', unitRows(el, [{ name: unitName(u, key), a, w: verdict(el, a) }], 'Lugar')]];
+  if (lvl) sheets.push([lvls.find(x => x[0] === lvl)[1], unitRows(el, subUnits(lvl, u, key, el), lvls.find(x => x[0] === lvl)[1])]);
+  saveXlsx(sheets, `${unitName(u, key)} ${m.cargo} ${m.anio}`);
+}
+function xlsAyu(b) {
+  const eid = S.el, E = EST[eid], list = Object.keys(E.mun).map(k => { const a = EMPTY(); addPack(a, E.mun[k]); return { name: MUNN[k], a, w: verdict(eid, a) }; }).filter(x => x.w && !x.w.tie && leadOf(x.w.c) === b);
+  saveXlsx([[b, unitRows(eid, list, 'Municipio')]], `Municipios ${b} ${ELS[eid].cargo} ${ELS[eid].anio}`);
+}
+/* el enlace guarda elección, lugar, vista, modo y alcance; quien lo abra entra con su propio usuario */
+const HASH0 = location.hash; let HASH_OK = false;
+function syncHash() { if (!HOME || !HASH_OK) return; const p = new URLSearchParams({ e: S.el, v: S.vista, f: S.foco.u + ':' + S.foco.key, m: S.modo, a: CAPAS.alcance }); if (S.sel) p.set('s', S.sel.u + ':' + S.sel.key);
+  try { history.replaceState(null, '', '#' + p.toString()); } catch {} }
+function applyHash() {
+  HASH_OK = true; const p = new URLSearchParams(HASH0.slice(1)); if (!p.get('e')) { syncHash(); return; }
+  const sp = s => { if (!s) return null; const [u, k] = s.split(/:(.*)/s); return { u, key: keyOf(u, k) }; };
+  try {
+    if (ELS[p.get('e')] && p.get('e') !== S.el) setEl(p.get('e'));
+    if (['foco', 'conurb', 'zm', 'todo'].includes(p.get('a'))) { CAPAS.alcance = p.get('a'); $$('[data-alc]').forEach(x => x.classList.toggle('on', x.dataset.alc === CAPAS.alcance)); applyCapas(); }
+    const f = sp(p.get('f')), s = sp(p.get('s')), v = p.get('v');
+    if (f && f.u === 'mun' && MUNN[f.key]) S.foco = f;
+    if (v && VK(v) && !(VK(v).det && !DETOK.length)) setVista(v, true);
+    if (s) goTo(s.u, s.key); else if (f) { select(null); fitGeom(geomOf(f.u, f.key)); }
+    if (p.get('m')) { S.modo = p.get('m'); fillModo(); paint(); }
+  } catch (e) { console.warn('enlace no válido', e); }
+  syncHash();
+}
+async function copyLink() { syncHash(); try { await navigator.clipboard.writeText(location.href); toast('Enlace copiado. Quien lo abra tendrá que entrar con su usuario.'); } catch { prompt('Copia este enlace:', location.href); } }
+function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; $('.stage').appendChild(d); setTimeout(() => d.classList.add('out'), 3500); setTimeout(() => d.remove(), 4100); }
+
 /* =================== FICHA (v10) =================== */
 function renderPanel() {
   const { u, key } = current(), m = ELS[S.el], a = agg(u, key, S.el), name = unitName(u, key), cargo = cargoBase(m.cargo);
   const crumb = S.sel ? `<div class="crumb"><button id="back">${esc(unitName(S.foco.u, S.foco.key))}</button><span>›</span><span>${esc(VK(S.sel.u).l)}</span></div>` : `<div class="crumb">${esc(m.cargo)} · ${m.anio}</div>`;
-  let h = `<div class="ph">${crumb}<h2>${esc(name)}</h2><div class="acts-top"><button class="btn pri" id="btn-cmp">⇄ Comparar elecciones</button></div></div>`;
+  let h = `<div class="ph">${crumb}<h2>${esc(name)}</h2><div class="acts-top"><button class="btn pri" id="btn-cmp">⇄ Comparar elecciones</button><button class="btn" id="btn-link" title="Copia un enlace que abre esta misma vista">🔗 Copiar enlace</button></div></div>`;
+  const dg = datosGen(u, key); if (dg) h += card('dat', 'Datos generales', dg, { sub: `${esc(name)} · corte ${esc(CAT.padron.corte)}`, zoom: false });
   if (a.n && a.t) h += card('res', 'Resultados electorales', resHead(S.el, a, u, key) + `<div class="k2-tabs">${partesTabs(S.partes)}</div>` + vcols(S.el, a, u, key, S.partes) + resSummary(S.el, a, u, key), { sub: `${esc(CSHORT[cargo])} ${m.anio} · ${esc(name)}` });
   else if (u !== 'sec') h += `<div class="note">No hubo elección de ${esc(m.cargo.toLowerCase())} en ${m.anio} aquí.</div>`;
   h += notes(u, a) + context(u, key);
   const tr = trendLine(u, key, cargo, 'cand', 420, 250, S.el); if (tr) h += card('tr', 'Evolución del voto', trendHead(u, key, cargo, 'cand', S.el) + tr, { sub: `${esc(cargo)} · ${esc(name)}` });
-  const dg = datosGen(u, key); if (dg) h += card('dat', 'Datos generales', dg, { sub: `${esc(name)} · corte ${esc(CAT.padron.corte)}`, zoom: false });
   const isHome = !S.sel && S.foco.u === HOME.u && S.foco.key === HOME.key, showState = isHome || CAPAS.alcance === 'todo';
   const st = m.tipo === 'SEN' || !showState ? null : seats(); if (st) h += card('seats', esc(st.title), seatsBody(st), { sub: 'Todo el estado de Puebla', icon: st.t === 'AYU' ? 'ayu' : 'cong', cls: 'state', zoom: false });
   const ce = m.tipo !== 'DL' && showState ? congEl() : null, sc2 = ce ? seats(ce) : null;
   if (sc2) h += card('cong', esc(sc2.title), seatsBody(sc2), { sub: 'Todo el estado de Puebla', cls: 'state', zoom: false });
-  if (CAPAS.alcance === 'todo' && EST._afi) h += card('afi', 'Afiliados por partido', afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`, { sub: 'Todo el estado · % de la lista nominal', zoom: false, cls: 'state' });
+  if (!showState) S.pinB = null;
+  if (showState && EST._afi) h += card('afi', 'Afiliados por partido', afiliados() + `<div class="src">${esc(CAT.afiliados.fuente)}.</div>`, { sub: 'Todo el estado · % de la lista nominal', zoom: false, cls: 'state' });
   h += `<div class="src">Fuente: ${esc(m.fuente)}, ${m.anio}. ${esc(CAT.fuentes.cartografia)}. ${esc(CAT.padron.fuente)}.</div>`;
   const B = $('#pbody'); B.innerHTML = h; B.scrollTop = 0; animate(B); linkRows(B); bindTips(B); hideTip();
   $$('#pbody .th').forEach(g => g.onclick = () => { hideTip(); setEl(g.dataset.el); });
   $$('#pbody [data-trf]').forEach(b => b.onclick = () => { TRF = TRF === b.dataset.trf ? null : b.dataset.trf; renderPanel(); });
   $$('#pbody [data-bloc]').forEach(c => { c.onmouseenter = () => mapFocusParty(c.dataset.bloc); c.onmouseleave = () => highlight(); });
+  $$('#pbody [data-pin]').forEach(c => c.onclick = () => { hideTip(); S.pinB = S.pinB === c.dataset.pin ? null : c.dataset.pin; const y = $('#pbody').scrollTop; renderPanel(); $('#pbody').scrollTop = y; highlight();
+    if (S.pinB) { const ks = Object.entries(MUNAGG).filter(([, u]) => u.w && !u.w.tie && leadOf(u.w.c) === S.pinB).map(([k]) => +k); const gs = GEO.municipios.features.filter(f => ks.includes(f.properties.municipio)); if (gs.length) fitGeom({ coordinates: gs.map(f => f.geometry.coordinates) }); } });
+  $$('#pbody [data-xls-ayu]').forEach(b => b.onclick = e => { e.stopPropagation(); xlsAyu(b.dataset.xlsAyu); });
+  $('#btn-link').onclick = copyLink;
   const back = $('#back'); if (back) back.onclick = () => select(null);
   $$('#partes button').forEach(b => b.onclick = () => { S.partes = b.dataset.p; renderPanel(); });
   $$('[data-go]').forEach(b => b.onclick = () => { const [v, k] = b.dataset.go.split(/:(.*)/s); goTo(v, k); });
@@ -1069,6 +1126,7 @@ async function start(session) {
   await mapP;
   buildControls(); addLayers(); buildSearch(); sheet();
   setVista(S.vista); applyCapas(); fitGeom(geomOf(HOME.u, HOME.key), 0);
+  applyHash();
   $('#loading').hidden = true;
   if (!store.get('pe_hint')) { const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = 'Toca cualquier municipio para acercarte y ver sus secciones. Con <b>Volver</b> regresas al inicio.'; $('.stage').appendChild(t);
     setTimeout(() => t.classList.add('out'), 7000); setTimeout(() => t.remove(), 7600); store.set('pe_hint', 1); }
