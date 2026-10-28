@@ -195,7 +195,8 @@ nombre = lambda s: ' '.join(w.capitalize() if len(w) > 2 or i == 0 else w.lower(
 estado = {}; secb = {int(m): {} for m in mun.municipio}; cat = []
 for fn, eid, anio, cargo, unidad, fuente in EL:
     rows = list(csv.reader(open(f'{RES}/{fn}.csv', encoding='utf-8-sig')))
-    h = [clean(c) for c in rows[0]]; raw = [c.strip().lstrip('﻿') for c in rows[0]]
+    rows[0] = [re.sub(r'^(?:\ufeff|ï»¿)+', '', c.strip()) for c in rows[0]]  # algunos CSV traen la marca BOM duplicada o mal codificada
+    h = [clean(c) for c in rows[0]]; raw = list(rows[0])
     iS, iM, iN = raw.index('SECCION'), raw.index('ID_MUNICIPIO'), raw.index('MUNICIPIO')
     iD = next((raw.index(c) for c in ('ID_DISTRITO_FEDERAL', 'ID_DISTRITO_LOCAL', 'ID_DISTRITO') if c in raw), None)
     spec = {k: raw.index(c) for c, k in SPEC.items() if c in raw}
