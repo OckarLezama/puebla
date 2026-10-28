@@ -960,3 +960,4 @@ details.dz[open] > summary { margin-bottom: 8px; }
   .ayx-l .dzt th:nth-child(3), .ayx-l .dzt td:nth-child(3) { display: none; }
   .ayx-h, .fz.ayx .fz-r { grid-template-columns: minmax(80px, 28%) 1fr 26px 52px 52px; }
 }
+.ubi-l { min-width: 84px; }
